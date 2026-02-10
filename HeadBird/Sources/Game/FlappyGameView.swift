@@ -2,7 +2,7 @@ import SpriteKit
 import SwiftUI
 
 struct FlappyGameView: View {
-    @EnvironmentObject private var model: HeadBarModel
+    @EnvironmentObject private var model: HeadBirdModel
     @StateObject private var state: GameState
     @State private var scene: FlappyGameScene
 

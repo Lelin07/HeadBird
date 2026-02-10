@@ -1,8 +1,8 @@
 import SwiftUI
 
 @main
-struct HeadBarApp: App {
-    @StateObject private var model = HeadBarModel()
+struct HeadBirdApp: App {
+    @StateObject private var model = HeadBirdModel()
 
     var body: some Scene {
         MenuBarExtra {

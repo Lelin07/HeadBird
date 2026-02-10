@@ -23,7 +23,7 @@ final class HeadphoneMotionMonitor: ObservableObject, @unchecked Sendable {
     private let manager = CMHeadphoneMotionManager()
     private let queue: OperationQueue = {
         let queue = OperationQueue()
-        queue.name = "HeadBar.HeadphoneMotionQueue"
+        queue.name = "HeadBird.HeadphoneMotionQueue"
         queue.maxConcurrentOperationCount = 1
         return queue
     }()

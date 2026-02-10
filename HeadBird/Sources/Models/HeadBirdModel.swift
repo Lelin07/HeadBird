@@ -4,7 +4,7 @@ import CoreMotion
 import Foundation
 
 @MainActor
-final class HeadBarModel: ObservableObject {
+final class HeadBirdModel: ObservableObject {
     @Published var defaultOutputName: String? = nil
     @Published var connectedAirPods: [String] = []
     @Published var motionSample: HeadphoneMotionSample? = nil

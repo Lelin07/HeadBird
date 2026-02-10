@@ -4,7 +4,7 @@ import CoreMotion
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject private var model: HeadBarModel
+    @EnvironmentObject private var model: HeadBirdModel
     @State private var selectedTab: Tab = .motion
     @State private var graphStyle: MotionHistoryGraph.GraphStyle = .lines
 

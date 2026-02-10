@@ -9,7 +9,7 @@ struct MenuBarIconView: View {
             .renderingMode(.template)
             .frame(width: 18, height: 18)
             .opacity(state == .asleep ? 0.6 : 1.0)
-            .accessibilityLabel("HeadBar")
+            .accessibilityLabel("HeadBird")
     }
 
     private var symbolImage: NSImage {
@@ -18,10 +18,10 @@ struct MenuBarIconView: View {
         }
         let names = ["airpodspro", "airpods", "headphones", "head.profile", "person.circle"]
         for name in names {
-            if let image = NSImage(systemSymbolName: name, accessibilityDescription: "HeadBar") {
+            if let image = NSImage(systemSymbolName: name, accessibilityDescription: "HeadBird") {
                 return image
             }
         }
-        return NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "HeadBar") ?? NSImage()
+        return NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "HeadBird") ?? NSImage()
     }
 }

@@ -10,13 +10,23 @@ final class GameState: ObservableObject {
     @Published var sensitivity: Double = 1.0
     @Published var hasPlayed: Bool = false
 
-    private let highScoreKey = "HeadBarHighScore"
+    private let highScoreKey = "HeadBirdHighScore"
+    private let legacyHighScoreKey = "HeadBarHighScore"
     private var baselinePitch: Double = 0
     private var currentPitch: Double = 0
     private let deadzoneDegrees: Double = 1.5
 
     init() {
-        highScore = UserDefaults.standard.integer(forKey: highScoreKey)
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: highScoreKey) == nil {
+            let legacyValue = defaults.integer(forKey: legacyHighScoreKey)
+            highScore = legacyValue
+            if legacyValue > 0 {
+                defaults.set(legacyValue, forKey: highScoreKey)
+            }
+        } else {
+            highScore = defaults.integer(forKey: highScoreKey)
+        }
     }
 
     func updatePitch(_ pitch: Double) {
