@@ -1,114 +1,147 @@
-# HeadBird
+<p align="center">
+  <img src="docs/assets/headbird-icon-squircle.png" alt="HeadBird icon" width="180" />
+</p>
 
-A minimal macOS menu bar app that visualizes your AirPods status and motion with a clean horizon view, dials, and history graph. Includes a head‑controlled mini game.
+<h1 align="center">HeadBird</h1>
 
-## Standard App Flow (User)
+<p align="center">
+  HeadBird is a native macOS menu bar app that reads AirPods head-tracking motion and visualizes Roll, Pitch, and Yaw in real time.
+</p>
 
-1. Install the app (see Install below).
-2. Launch HeadBird — it appears in the **menu bar**.
-3. Click the icon to open the popover.
-4. **Motion tab** shows:
-   - AirPods model name + Connected/Not connected pill
-   - Horizon + pitch/roll/yaw dials
-   - History graph with selectable styles
-   - Set Zero to calibrate
-5. **Game tab** shows:
-   - Status pill
-   - Play/Reset controls
-   - Tilt your head to fly
-6. **About tab** shows:
-   - Version, privacy, signals, and GitHub link
+<p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.0-blue" />
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%2014%2B-black?logo=apple" />
+  <img alt="Language" src="https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white" />
+  <img alt="UI" src="https://img.shields.io/badge/UI-SwiftUI-0A84FF" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-AppKit-1F1F1F" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-Combine-0A84FF" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-CoreMotion-34C759" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-CoreBluetooth-007AFF" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-IOBluetooth-0A84FF" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-SpriteKit-EA4AAA" />
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-AudioToolbox-FF9F0A" />
+  <img alt="Tooling" src="https://img.shields.io/badge/Xcode-15%2B-147EFB?logo=xcode&logoColor=white" />
+</p>
 
-## Install (One‑Click for Users)
+## Features
 
-The easiest one‑click experience is a **signed + notarized** DMG or ZIP from GitHub Releases:
+- Real-time Roll, Pitch, and Yaw visualization.
+- Motion history graph for quick trend reading.
+- One-click zero calibration.
+- Head-controlled mini game (tilt your head up/down to play).
+- Lightweight macOS menu bar UX.
 
-1. Download the latest release.
-2. Open the DMG and drag **HeadBird.app** into **Applications**.
-3. Launch HeadBird from Applications (or Spotlight).
+## Install From Released DMG (Future Releases)
 
-If the app is **not notarized**, macOS Gatekeeper will block it. In that case:
-- Right‑click the app → **Open** → **Open**.
-- Or go to **System Settings → Privacy & Security → Open Anyway**.
+When a release is published on GitHub:
 
-## Build from Source (Developers)
+1. Open the latest release and download `HeadBird-<version>-macos-*.dmg`.
+2. Double-click the `.dmg` file.
+3. Drag `HeadBird.app` into `Applications`.
+4. Launch `HeadBird` from `Applications` or Spotlight.
 
-### Prerequisites
-- macOS 14 or later
-- Xcode 15 or later
-- AirPods connected to the Mac
+## If macOS Shows "Malware" / Unverified Developer Warning
 
-### Run in Xcode (Recommended)
-1. Open `HeadBird.xcodeproj` in Xcode.
-2. Select the `HeadBird` scheme and `My Mac` run destination.
-3. Press `Cmd + R` to build and run.
-4. Click the menu bar icon to open HeadBird.
-5. On first launch, allow:
-   - Bluetooth access (for connected headset detection)
-   - Motion access (for AirPods head-tracking data)
+Because early releases may be distributed without Apple notarization, macOS Gatekeeper can block first launch.
 
-### Verify It Is Working
-1. Set AirPods as the default output device in macOS.
-2. Open HeadBird and go to the **Motion** tab.
-3. Confirm the status is connected and motion values update when moving your head.
+Use one of these methods:
 
-### Troubleshooting
-- If motion does not start, quit HeadBird, reconnect AirPods, and relaunch.
-- If prompts were previously denied, re-enable permissions in:
-  `System Settings -> Privacy & Security`.
-- If Xcode appears to run stale binaries, use `Product -> Clean Build Folder` and run again.
+1. Finder method:
+   - Open `Applications`.
+   - Right-click `HeadBird.app` and click `Open`.
+   - Click `Open` again in the security prompt.
+2. System Settings method:
+   - Try opening the app once.
+   - Go to `System Settings -> Privacy & Security`.
+   - In the Security section, click `Open Anyway` for HeadBird.
+3. Terminal fallback (advanced users):
 
-## Pre‑Release DMG (Maintainers)
-
-### 1) Build unsigned app
 ```bash
-./scripts/build-unsigned.sh
-```
-This outputs the app path at `dist/HeadBird.app`.
-
-### 2) Create DMG (drag‑to‑Applications)
-```bash
-./scripts/make-dmg.sh "dist/HeadBird.app"
+xattr -dr com.apple.quarantine "/Applications/HeadBird.app"
 ```
 
-The DMG will be at `dist/HeadBird.dmg`.
+Notes:
 
-### 3) Upload to GitHub Releases
-- Mark the release as **Pre‑release**
-- Upload `dist/HeadBird.dmg` as the binary
+- Only remove quarantine for apps you trust.
+- If checksum is provided in the release notes, verify it before first launch.
 
-## Motion Permission
+## First-Launch Permissions
 
-HeadBird needs motion permission to read AirPods motion data.
-- Ensure `NSMotionUsageDescription` exists in the app Info.plist.
-- You will be prompted on first run.
+HeadBird requests:
 
-## Signals (Current)
+- Bluetooth permission (to detect AirPods connection state).
+- Motion permission (to read AirPods head-tracking data).
 
-- Default audio output device
-- Bluetooth connection state for AirPods
-- Headphone motion (CMHeadphoneMotionManager)
+If previously denied, re-enable in `System Settings -> Privacy & Security`.
+
+## Build From Source (Xcode)
+
+Requirements:
+
+- macOS 14+
+- Xcode 15+
+- AirPods connected to your Mac
+
+Run:
+
+1. Open `HeadBird.xcodeproj`.
+2. Select scheme `HeadBird` and destination `My Mac`.
+3. Press `Cmd + R`.
+4. Click the menu bar icon to open the app UI.
+
+## Manual DMG Release Workflow (Maintainers)
+
+This project currently uses a manual release flow in Xcode.
+
+1. Build `Release` in Xcode.
+2. In Xcode, open `Product -> Show Build Folder in Finder`.
+3. Locate `HeadBird.app` under `Build/Products/Release`.
+4. Stage DMG contents:
+
+```bash
+APP="/ABSOLUTE/PATH/TO/HeadBird.app"
+VERSION="0.1.0"
+STAGE="/tmp/HeadBird-dmg-stage"
+RW_DMG="/tmp/HeadBird-${VERSION}-rw.dmg"
+FINAL_DMG="$HOME/Desktop/HeadBird-${VERSION}-macos-arm64.dmg"
+
+rm -rf "$STAGE" "$RW_DMG" "$FINAL_DMG"
+mkdir -p "$STAGE/.background"
+cp -R "$APP" "$STAGE/HeadBird.app"
+ln -s /Applications "$STAGE/Applications"
+```
+
+5. Create and mount a read-write DMG:
+
+```bash
+hdiutil create -volname "HeadBird" -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
+hdiutil attach "$RW_DMG"
+```
+
+6. In Finder, arrange the mounted volume for drag-to-Applications UX:
+   - View as Icons.
+   - Set icon size and grid spacing in Show View Options.
+   - Place `HeadBird.app` on the left and `Applications` alias on the right.
+   - Close the Finder window and eject the mounted volume.
+
+7. Convert to compressed release DMG:
+
+```bash
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$FINAL_DMG"
+shasum -a 256 "$FINAL_DMG"
+```
+
+8. Upload `FINAL_DMG` to GitHub Releases (mark as Pre-release if needed).
+
+## Versioning
+
+HeadBird follows Semantic Versioning.
+
+- Current planned public baseline: `v0.1.0`.
+- `MARKETING_VERSION` should remain `0.1.0` in Xcode for this release line.
 
 ## Privacy
 
-- No microphone usage
-- No audio processing
-
-## Distribution (Maintainers)
-
-To provide a true one‑click install experience:
-1. Archive the app in Xcode.
-2. Sign with a **Developer ID** certificate.
-3. Notarize with Apple.
-4. Staple the notarization ticket.
-5. Ship a DMG/ZIP on GitHub Releases.
-
-This ensures users can install without Gatekeeper prompts.
-
-## 3D Roadmap (Planned, not implemented)
-
-- Standard asset name: `HeadMesh.usdz`
-- Bundle resource loading with explicit error reporting
-- Camera fitting based on model bounds
-- Motion mapping to node rotation with clamping and smoothing
-- Feature-flag gated renderer (`FeatureFlags.enable3DHead`)
+- No microphone recording.
+- No audio content processing.
+- Uses local device state and motion signals only for app features.
