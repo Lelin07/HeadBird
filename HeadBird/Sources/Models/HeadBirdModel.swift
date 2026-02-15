@@ -93,7 +93,7 @@ final class HeadBirdModel: ObservableObject {
                 self?.refreshBluetooth()
             }
         }
-        bluetoothMonitor.requestAuthorizationIfNeeded()
+        requestRequiredPermissions()
 
         startBluetoothPolling()
     }
@@ -149,6 +149,11 @@ final class HeadBirdModel: ObservableObject {
         motionHistory.removeAll()
     }
 
+    func requestRequiredPermissions() {
+        bluetoothMonitor.requestAuthorizationIfNeeded()
+        motionMonitor.startIfPossible()
+    }
+
     private func startBluetoothPolling() {
         bluetoothTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -177,7 +182,9 @@ final class HeadBirdModel: ObservableObject {
         }
 
         connectedAirPods = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        if connectedAirPods.isEmpty == false {
+
+        let canRequestMotion = motionAuthorization != .denied && motionAuthorization != .restricted
+        if canRequestMotion && !motionStreaming {
             motionMonitor.startIfPossible()
         }
     }
