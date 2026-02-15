@@ -53,16 +53,9 @@ struct ContentView: View {
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                 Spacer()
-                StatusPill(isConnected: isEnabled)
+                StatusPill(status: model.motionConnectionStatus)
             }
             .padding(.horizontal, 24)
-
-            if let status = motionStatusText {
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 24)
-            }
 
             MotionHorizonView(pitch: displayPose.pitch, roll: displayPose.roll)
                 .padding(.horizontal, 24)
@@ -121,26 +114,6 @@ struct ContentView: View {
             .padding(.horizontal, 24)
         }
         .padding(.top, 6)
-    }
-
-    private var motionStatusText: String? {
-        if model.connectedAirPods.isEmpty,
-           (model.bluetoothAuthorization == .denied || model.bluetoothAuthorization == .restricted) {
-            return "Bluetooth permission required"
-        }
-        if model.connectedAirPods.isEmpty {
-            return "Not connected"
-        }
-        if !model.motionAvailable {
-            return "Motion unavailable"
-        }
-        if model.motionAuthorization == .denied || model.motionAuthorization == .restricted {
-            return "Permission required"
-        }
-        if !model.motionStreaming {
-            return "Waiting…"
-        }
-        return nil
     }
 
     private func degrees(_ radians: Double) -> Double {
