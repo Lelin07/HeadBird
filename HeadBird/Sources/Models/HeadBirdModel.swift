@@ -136,61 +136,47 @@ final class HeadBirdModel: ObservableObject {
     }
 
     var activeAirPodsName: String? {
-        if connectedAirPods.isEmpty == false {
-            if let outputName = defaultOutputName,
-               let match = connectedAirPods.first(where: { namesMatch($0, outputName) }) {
-                return match
-            }
-            return connectedAirPods.first
-        }
-        return motionHeadphoneConnected ? "AirPods" : nil
+        HeadBirdModelLogic.activeAirPodsName(
+            connectedAirPods: connectedAirPods,
+            defaultOutputName: defaultOutputName,
+            motionHeadphoneConnected: motionHeadphoneConnected
+        )
     }
 
     var isActive: Bool {
-        guard let activeAirPodsName else { return false }
-        guard let outputName = defaultOutputName else { return false }
-        return namesMatch(activeAirPodsName, outputName)
+        HeadBirdModelLogic.isActive(
+            activeAirPodsName: activeAirPodsName,
+            defaultOutputName: defaultOutputName
+        )
     }
 
     var headState: HeadState {
-        if !hasAnyAirPodsConnection {
-            return .asleep
-        }
-        if isActive || motionStreaming {
-            return .active
-        }
-        return .idle
+        HeadBirdModelLogic.headState(
+            hasAnyAirPodsConnection: hasAnyAirPodsConnection,
+            isActive: isActive,
+            motionStreaming: motionStreaming
+        )
     }
 
     var motionConnectionStatus: MotionConnectionStatus {
-        if !hasAnyAirPodsConnection,
-           (bluetoothAuthorization == .denied || bluetoothAuthorization == .restricted) {
-            return .bluetoothPermissionRequired
-        }
-        if !hasAnyAirPodsConnection {
-            return .notConnected
-        }
-        if motionAuthorization == .denied || motionAuthorization == .restricted {
-            return .motionPermissionRequired
-        }
-        if !motionStreaming {
-            return .waiting
-        }
-        if !motionAvailable {
-            return .motionUnavailable
-        }
-        return .connected
+        HeadBirdModelLogic.motionConnectionStatus(
+            hasAnyAirPodsConnection: hasAnyAirPodsConnection,
+            bluetoothAuthorization: bluetoothAuthorization,
+            motionAuthorization: motionAuthorization,
+            motionStreaming: motionStreaming,
+            motionAvailable: motionAvailable
+        )
     }
 
     var statusTitle: String {
-        activeAirPodsName ?? "No AirPods Connected"
+        HeadBirdModelLogic.statusTitle(activeAirPodsName: activeAirPodsName)
     }
 
     var statusSubtitle: String {
-        guard hasAnyAirPodsConnection else {
-            return "Open the case to connect."
-        }
-        return isActive ? "Active" : "Connected"
+        HeadBirdModelLogic.statusSubtitle(
+            hasAnyAirPodsConnection: hasAnyAirPodsConnection,
+            isActive: isActive
+        )
     }
 
     func refreshNow() {
@@ -226,14 +212,14 @@ final class HeadBirdModel: ObservableObject {
         var names = Set(bluetoothMonitor.connectedAirPods())
 
         if let defaultOutputDevice = audioMonitor.defaultOutputDevice {
-            if defaultOutputDevice.isBluetooth || isAirPodsName(defaultOutputDevice.name) {
+            if defaultOutputDevice.isBluetooth || HeadBirdModelLogic.isAirPodsName(defaultOutputDevice.name) {
                 names.insert(defaultOutputDevice.name)
             }
-        } else if let defaultOutputName, isAirPodsName(defaultOutputName) {
+        } else if let defaultOutputName, HeadBirdModelLogic.isAirPodsName(defaultOutputName) {
             names.insert(defaultOutputName)
         }
 
-        for device in audioMonitor.devices where device.isBluetooth || isAirPodsName(device.name) {
+        for device in audioMonitor.devices where device.isBluetooth || HeadBirdModelLogic.isAirPodsName(device.name) {
             names.insert(device.name)
         }
 
@@ -248,20 +234,6 @@ final class HeadBirdModel: ObservableObject {
         if hasConnectedAirPods && canRequestMotion {
             motionMonitor.startIfPossible()
         }
-    }
-
-    private func namesMatch(_ lhs: String, _ rhs: String) -> Bool {
-        let left = normalize(lhs)
-        let right = normalize(rhs)
-        return left == right || left.contains(right) || right.contains(left)
-    }
-
-    private func normalize(_ value: String) -> String {
-        value.lowercased().filter { $0.isLetter || $0.isNumber }
-    }
-
-    private func isAirPodsName(_ name: String) -> Bool {
-        normalize(name).contains("airpods")
     }
 
     private func applyDeadzone(_ value: Double) -> Double {
