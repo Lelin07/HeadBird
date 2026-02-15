@@ -1,17 +1,13 @@
+import AppKit
 import SwiftUI
 
 @main
 struct HeadBirdApp: App {
-    @StateObject private var model = HeadBirdModel()
+    @NSApplicationDelegateAdaptor(HeadBirdAppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            ContentView()
-                .environmentObject(model)
-                .frame(width: 420)
-        } label: {
-            MenuBarIconView(state: model.headState)
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }
