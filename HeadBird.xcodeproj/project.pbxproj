@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		7353F8C02F3B581500EFE5F3 /* HeadBird.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HeadBird.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		73B100012F3E000100000001 /* HeadBirdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HeadBirdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +17,22 @@
 			path = HeadBird;
 			sourceTree = "<group>";
 		};
+		73B100022F3E000100000001 /* HeadBirdTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HeadBirdTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7353F8BD2F3B581500EFE5F3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73B100032F3E000100000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				7353F8C22F3B581500EFE5F3 /* HeadBird */,
+				73B100022F3E000100000001 /* HeadBirdTests */,
 				7353F8C12F3B581500EFE5F3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,11 +55,22 @@
 			isa = PBXGroup;
 			children = (
 				7353F8C02F3B581500EFE5F3 /* HeadBird.app */,
+				73B100012F3E000100000001 /* HeadBirdTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		73B100062F3E000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7353F8B82F3B581500EFE5F3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7353F8BF2F3B581500EFE5F3;
+			remoteInfo = HeadBird;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		7353F8BF2F3B581500EFE5F3 /* HeadBird */ = {
@@ -70,6 +95,29 @@
 			productReference = 7353F8C02F3B581500EFE5F3 /* HeadBird.app */;
 			productType = "com.apple.product-type.application";
 		};
+		73B100082F3E000100000001 /* HeadBirdTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 73B1000B2F3E000100000001 /* Build configuration list for PBXNativeTarget "HeadBirdTests" */;
+			buildPhases = (
+				73B100052F3E000100000001 /* Sources */,
+				73B100032F3E000100000001 /* Frameworks */,
+				73B100042F3E000100000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				73B100072F3E000100000001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				73B100022F3E000100000001 /* HeadBirdTests */,
+			);
+			name = HeadBirdTests;
+			packageProductDependencies = (
+			);
+			productName = HeadBirdTests;
+			productReference = 73B100012F3E000100000001 /* HeadBirdTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +130,10 @@
 				TargetAttributes = {
 					7353F8BF2F3B581500EFE5F3 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					73B100082F3E000100000001 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 7353F8BF2F3B581500EFE5F3;
 					};
 				};
 			};
@@ -100,12 +152,20 @@
 			projectRoot = "";
 			targets = (
 				7353F8BF2F3B581500EFE5F3 /* HeadBird */,
+				73B100082F3E000100000001 /* HeadBirdTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7353F8BE2F3B581500EFE5F3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73B100042F3E000100000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +182,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		73B100052F3E000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		73B100072F3E000100000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7353F8BF2F3B581500EFE5F3 /* HeadBird */;
+			targetProxy = 73B100062F3E000100000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7353F8C92F3B581600EFE5F3 /* Debug */ = {
@@ -317,6 +392,56 @@
 			};
 			name = Release;
 		};
+		73B100092F3E000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/HeadBird.app/Contents/MacOS/HeadBird.debug.dylib";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 8Y9T9V659Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+					"@loader_path/../../../HeadBird.app/Contents/MacOS",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = primecodes.HeadBirdTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = HeadBird;
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		73B1000A2F3E000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/HeadBird.app/Contents/MacOS/HeadBird";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 8Y9T9V659Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@executable_path/../Frameworks",
+					"@loader_path/../../../HeadBird.app/Contents/MacOS",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = primecodes.HeadBirdTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = HeadBird;
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -334,6 +459,15 @@
 			buildConfigurations = (
 				7353F8CC2F3B581600EFE5F3 /* Debug */,
 				7353F8CD2F3B581600EFE5F3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		73B1000B2F3E000100000001 /* Build configuration list for PBXNativeTarget "HeadBirdTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73B100092F3E000100000001 /* Debug */,
+				73B1000A2F3E000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
