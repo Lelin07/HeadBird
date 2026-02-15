@@ -3,6 +3,15 @@ import CoreBluetooth
 import CoreMotion
 import Foundation
 
+enum MotionConnectionStatus: Equatable {
+    case notConnected
+    case waiting
+    case connected
+    case bluetoothPermissionRequired
+    case motionPermissionRequired
+    case motionUnavailable
+}
+
 @MainActor
 final class HeadBirdModel: ObservableObject {
     @Published var defaultOutputName: String? = nil
@@ -16,6 +25,7 @@ final class HeadBirdModel: ObservableObject {
     @Published var motionStreaming: Bool = false
     @Published var motionError: String? = nil
     @Published var motionSensitivity: Double = 1.0
+    @Published private var motionHeadphoneConnected: Bool = false
 
     private let audioMonitor = AudioDeviceMonitor()
     private let bluetoothMonitor = BluetoothMonitor()
@@ -77,11 +87,30 @@ final class HeadBirdModel: ObservableObject {
 
         motionMonitor.$authorizationStatus
             .receive(on: DispatchQueue.main)
-            .assign(to: &$motionAuthorization)
+            .sink { [weak self] status in
+                guard let self else { return }
+                let previousStatus = self.motionAuthorization
+                self.motionAuthorization = status
+
+                let becameAuthorizedWhileConnected =
+                    self.hasAnyAirPodsConnection &&
+                    previousStatus == .notDetermined &&
+                    status != .notDetermined &&
+                    status != .denied &&
+                    status != .restricted
+                if becameAuthorizedWhileConnected {
+                    self.motionMonitor.startIfPossible()
+                }
+            }
+            .store(in: &cancellables)
 
         motionMonitor.$isStreaming
             .receive(on: DispatchQueue.main)
             .assign(to: &$motionStreaming)
+
+        motionMonitor.$isHeadphoneConnected
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$motionHeadphoneConnected)
 
         motionMonitor.$errorMessage
             .receive(on: DispatchQueue.main)
@@ -102,13 +131,19 @@ final class HeadBirdModel: ObservableObject {
         bluetoothTask?.cancel()
     }
 
+    private var hasAnyAirPodsConnection: Bool {
+        connectedAirPods.isEmpty == false || motionHeadphoneConnected
+    }
+
     var activeAirPodsName: String? {
-        guard connectedAirPods.isEmpty == false else { return nil }
-        if let outputName = defaultOutputName,
-           let match = connectedAirPods.first(where: { namesMatch($0, outputName) }) {
-            return match
+        if connectedAirPods.isEmpty == false {
+            if let outputName = defaultOutputName,
+               let match = connectedAirPods.first(where: { namesMatch($0, outputName) }) {
+                return match
+            }
+            return connectedAirPods.first
         }
-        return connectedAirPods.first
+        return motionHeadphoneConnected ? "AirPods" : nil
     }
 
     var isActive: Bool {
@@ -118,13 +153,33 @@ final class HeadBirdModel: ObservableObject {
     }
 
     var headState: HeadState {
-        if connectedAirPods.isEmpty {
+        if !hasAnyAirPodsConnection {
             return .asleep
         }
-        if isActive {
+        if isActive || motionStreaming {
             return .active
         }
         return .idle
+    }
+
+    var motionConnectionStatus: MotionConnectionStatus {
+        if !hasAnyAirPodsConnection,
+           (bluetoothAuthorization == .denied || bluetoothAuthorization == .restricted) {
+            return .bluetoothPermissionRequired
+        }
+        if !hasAnyAirPodsConnection {
+            return .notConnected
+        }
+        if motionAuthorization == .denied || motionAuthorization == .restricted {
+            return .motionPermissionRequired
+        }
+        if !motionStreaming {
+            return .waiting
+        }
+        if !motionAvailable {
+            return .motionUnavailable
+        }
+        return .connected
     }
 
     var statusTitle: String {
@@ -132,7 +187,7 @@ final class HeadBirdModel: ObservableObject {
     }
 
     var statusSubtitle: String {
-        guard connectedAirPods.isEmpty == false else {
+        guard hasAnyAirPodsConnection else {
             return "Open the case to connect."
         }
         return isActive ? "Active" : "Connected"
@@ -160,13 +215,14 @@ final class HeadBirdModel: ObservableObject {
             while !Task.isCancelled {
                 self.audioMonitor.refresh()
                 self.refreshBluetooth()
-                try? await Task.sleep(for: .seconds(2.5))
+                try? await Task.sleep(for: .seconds(1.0))
             }
         }
     }
 
     @MainActor
     private func refreshBluetooth() {
+        let hadConnectedAirPods = hasAnyAirPodsConnection
         var names = Set(bluetoothMonitor.connectedAirPods())
 
         if let defaultOutputDevice = audioMonitor.defaultOutputDevice {
@@ -182,9 +238,14 @@ final class HeadBirdModel: ObservableObject {
         }
 
         connectedAirPods = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        let hasConnectedAirPods = hasAnyAirPodsConnection
+
+        if !hadConnectedAirPods && hasConnectedAirPods {
+            requestRequiredPermissions()
+        }
 
         let canRequestMotion = motionAuthorization != .denied && motionAuthorization != .restricted
-        if canRequestMotion && !motionStreaming {
+        if hasConnectedAirPods && canRequestMotion {
             motionMonitor.startIfPossible()
         }
     }
