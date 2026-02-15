@@ -107,49 +107,64 @@ xcodebuild test \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-## Manual DMG Release Workflow (Maintainers)
+## DMG Release Wizard (Maintainers)
 
-This project currently uses a manual release flow in Xcode.
+HeadBird now includes an interactive shell wizard for packaging a release DMG.
+
+### Quickstart (Recommended)
 
 1. Build `Release` in Xcode.
 2. In Xcode, open `Product -> Show Build Folder in Finder`.
 3. Locate `HeadBird.app` under `Build/Products/Release`.
-4. Stage DMG contents:
+4. Run the wizard:
 
 ```bash
-APP="/ABSOLUTE/PATH/TO/HeadBird.app"
-VERSION="0.1.0"
-STAGE="/tmp/HeadBird-dmg-stage"
-RW_DMG="/tmp/HeadBird-${VERSION}-rw.dmg"
-FINAL_DMG="$HOME/Desktop/HeadBird-${VERSION}-macos-arm64.dmg"
-
-rm -rf "$STAGE" "$RW_DMG" "$FINAL_DMG"
-mkdir -p "$STAGE/.background"
-cp -R "$APP" "$STAGE/HeadBird.app"
-ln -s /Applications "$STAGE/Applications"
+./scripts/make-release-dmg.sh
 ```
 
-5. Create and mount a read-write DMG:
+5. Follow prompts for:
+   - Absolute app path (`.../HeadBird.app`)
+   - Version (`0.1.0`, etc.)
+   - Output directory (default: `~/Desktop`)
+   - Volume name (default: `HeadBird`)
+   - Optional background image (`.png/.jpg`)
+6. During the Finder layout step, place `HeadBird.app` on the left and `Applications` alias on the right.
+7. After conversion, copy the printed SHA-256 and upload the final DMG to GitHub Releases.
+
+### Advanced Non-Interactive Usage
+
+For repeatable runs, you can pass all values as flags:
 
 ```bash
-hdiutil create -volname "HeadBird" -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
-hdiutil attach "$RW_DMG"
+./scripts/make-release-dmg.sh \
+  --app-path "/ABSOLUTE/PATH/TO/HeadBird.app" \
+  --version "0.1.0" \
+  --output-dir "$HOME/Desktop" \
+  --volume-name "HeadBird" \
+  --non-interactive
 ```
 
-6. In Finder, arrange the mounted volume for drag-to-Applications UX:
-   - View as Icons.
-   - Set icon size and grid spacing in Show View Options.
-   - Place `HeadBird.app` on the left and `Applications` alias on the right.
-   - Close the Finder window and eject the mounted volume.
+Optional flags:
 
-7. Convert to compressed release DMG:
+- `--background-image "/ABSOLUTE/PATH/TO/background.png"`
+- `--force` to overwrite an existing final DMG
+- `--help` for full usage
+
+### Troubleshooting
+
+If conversion fails with `Resource temporarily unavailable`:
+
+1. Ensure no Finder/terminal window is using the mounted volume.
+2. Detach the mounted device:
 
 ```bash
-hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$FINAL_DMG"
-shasum -a 256 "$FINAL_DMG"
+hdiutil info
+hdiutil detach <device> -force
 ```
 
-8. Upload `FINAL_DMG` to GitHub Releases (mark as Pre-release if needed).
+3. Re-run the wizard or retry conversion.
+
+The wizard also prints `lsof` output and exact recovery commands when conversion fails.
 
 ## Versioning
 
