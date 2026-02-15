@@ -21,7 +21,7 @@ struct FlappyGameView: View {
                 Text("HeadBird")
                     .font(.title3.weight(.semibold))
                 Spacer()
-                StatusPill(isConnected: model.connectedAirPods.isEmpty == false)
+                StatusPill(status: model.motionConnectionStatus)
                 Button {
                     startOrReset()
                 } label: {
