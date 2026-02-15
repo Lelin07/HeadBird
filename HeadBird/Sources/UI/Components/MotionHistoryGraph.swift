@@ -4,7 +4,6 @@ struct MotionHistoryGraph: View {
     enum GraphStyle: String, CaseIterable, Identifiable {
         case lines = "Lines"
         case area = "Area"
-        case dots = "Dots"
 
         var id: String { rawValue }
     }
@@ -40,10 +39,6 @@ struct MotionHistoryGraph: View {
                     fillArea(path: pitchPath, in: &context, size: size, color: pitchColor)
                     fillArea(path: rollPath, in: &context, size: size, color: rollColor)
                     fillArea(path: yawPath, in: &context, size: size, color: yawColor)
-                case .dots:
-                    drawDots(for: samples, in: &context, size: size, color: pitchColor) { normalized($0.pose.pitch) }
-                    drawDots(for: samples, in: &context, size: size, color: rollColor) { normalized($0.pose.roll) }
-                    drawDots(for: samples, in: &context, size: size, color: yawColor) { normalized($0.pose.yaw) }
                 }
             }
         }
@@ -102,22 +97,5 @@ struct MotionHistoryGraph: View {
         area.closeSubpath()
         context.fill(area, with: .color(color.opacity(0.18)))
         context.stroke(path, with: .color(color.opacity(0.75)), lineWidth: 1.3)
-    }
-
-    private func drawDots(
-        for samples: [MotionHistorySample],
-        in context: inout GraphicsContext,
-        size: CGSize,
-        color: Color,
-        value: (MotionHistorySample) -> Double
-    ) {
-        let count = samples.count
-        guard count > 1 else { return }
-        for (index, sample) in samples.enumerated() {
-            let x = CGFloat(index) / CGFloat(max(count - 1, 1)) * size.width
-            let y = size.height / 2 - CGFloat(value(sample)) * (size.height / 2)
-            let rect = CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3)
-            context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.85)))
-        }
     }
 }
