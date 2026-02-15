@@ -89,6 +89,24 @@ Run:
 3. Press `Cmd + R`.
 4. Click the menu bar icon to open the app UI.
 
+## Running Tests Locally
+
+Run the local test script:
+
+```bash
+./scripts/run-tests.sh
+```
+
+Or run `xcodebuild` directly:
+
+```bash
+xcodebuild test \
+  -project HeadBird.xcodeproj \
+  -scheme HeadBird \
+  -destination 'platform=macOS,arch=arm64' \
+  CODE_SIGNING_ALLOWED=NO
+```
+
 ## Manual DMG Release Workflow (Maintainers)
 
 This project currently uses a manual release flow in Xcode.
