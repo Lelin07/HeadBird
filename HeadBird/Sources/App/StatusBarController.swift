@@ -12,6 +12,11 @@ final class HeadBirdAppDelegate: NSObject, NSApplicationDelegate {
         model.requestRequiredPermissions()
         statusBarController.start(with: model)
     }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model.requestRequiredPermissions()
+        model.refreshNow()
+    }
 }
 
 @MainActor
@@ -67,8 +72,8 @@ final class StatusBarController: NSObject {
     }
 
     private func bindModel(_ model: HeadBirdModel) {
-        Publishers.CombineLatest(model.$connectedAirPods, model.$defaultOutputName)
-            .sink { [weak self, weak model] _, _ in
+        model.objectWillChange
+            .sink { [weak self, weak model] _ in
                 guard let self, let model else { return }
                 self.updateAppearance(for: model.headState)
             }
@@ -109,6 +114,8 @@ final class StatusBarController: NSObject {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            model?.requestRequiredPermissions()
+            model?.refreshNow()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
