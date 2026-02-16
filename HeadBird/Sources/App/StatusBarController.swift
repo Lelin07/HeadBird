@@ -1,4 +1,5 @@
 import AppKit
+import AppIntents
 import Combine
 import CoreImage
 import SwiftUI
@@ -10,6 +11,7 @@ final class HeadBirdAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.requestRequiredPermissions()
+        HeadBirdAppShortcuts.updateAppShortcutParameters()
         statusBarController.start(with: model)
     }
 
