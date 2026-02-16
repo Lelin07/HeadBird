@@ -122,80 +122,143 @@ struct ContentView: View {
 
     private var aboutTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(width: 44, height: 44)
-                    .overlay(
-                        Text("HB")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    )
+            HStack(alignment: .top, spacing: 12) {
+                HStack(spacing: 12) {
+                    appIcon
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("HeadBird")
-                        .font(.title3.weight(.semibold))
-                    if let version = appVersion {
-                        Text("Version \(version)")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("HeadBird")
+                            .font(.title3.weight(.semibold))
+                        Text("Version \(appVersion)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Spacer()
+
+                githubLink
             }
 
             Text("AirPods motion visualization with a head‑controlled mini game in the menu bar.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 10) {
-                infoRow(title: "Privacy", detail: "No microphone usage. No audio processing.")
-                infoRow(title: "Signals", detail: "AirPods connection, default output device, headphone motion.")
+                privacyCard
+                signalsCard
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.secondary.opacity(0.08))
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Link(destination: URL(string: "https://github.com/Lelin07/HeadBird")!) {
-                HStack(spacing: 8) {
-                    githubIcon
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 14, height: 14)
-                    Text("GitHub")
-                        .font(.caption)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.12))
-                )
-            }
-            .buttonStyle(.plain)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
         .padding(.top, 8)
     }
 
-    private var appVersion: String? {
+    private var appIcon: some View {
+        Image(nsImage: NSApplication.shared.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFill()
+            .frame(width: 44, height: 44)
+            .scaleEffect(1.22)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+            )
+    }
+
+    private var githubLink: some View {
+        Link(destination: URL(string: "https://github.com/Lelin07/HeadBird")!) {
+            HStack(spacing: 8) {
+                githubIcon
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
+                Text("GitHub")
+                    .font(.caption)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(Color.secondary.opacity(0.12))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var appVersion: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         if let short, let build, short != build {
             return "\(short) (\(build))"
         }
-        return short ?? build
+        return short ?? build ?? "Unknown"
     }
 
-    private func infoRow(title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var privacyCard: some View {
+        aboutInfoCard(
+            title: "Privacy",
+            systemImage: "lock.shield",
+            bullets: [
+                "No microphone access.",
+                "No audio recording or processing.",
+                "Motion and device-state data stays on this Mac.",
+                "No cloud upload of this data."
+            ]
+        )
+    }
+
+    private var signalsCard: some View {
+        aboutInfoCard(
+            title: "Signals",
+            systemImage: "antenna.radiowaves.left.and.right",
+            bullets: [
+                "AirPods connection status.",
+                "Default output-device status.",
+                "Headphone motion (pitch, roll, yaw).",
+                "Sensitivity value for game control."
+            ]
+        )
+    }
+
+    private func aboutInfoCard(title: String, systemImage: String, bullets: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(bullets.enumerated()), id: \.offset) { _, bullet in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(Color.secondary)
+                            .frame(width: 4, height: 4)
+                            .padding(.top, 5)
+                        Text(bullet)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.08))
+        )
     }
 
     private var githubIcon: Image {
