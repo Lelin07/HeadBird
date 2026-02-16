@@ -2,6 +2,7 @@ import CoreBluetooth
 import Foundation
 import IOBluetooth
 
+@MainActor
 final class BluetoothMonitor: NSObject {
     var onAuthorizationChanged: ((CBManagerAuthorization) -> Void)?
 
