@@ -11,3 +11,4 @@ DerivedData/
 *.xcuserstate
 *.xcworkspace
 /dist/
+.derivedData
