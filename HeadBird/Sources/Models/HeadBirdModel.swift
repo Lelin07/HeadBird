@@ -27,108 +27,124 @@ final class HeadBirdModel: ObservableObject {
     @Published var motionSensitivity: Double = 1.0
     @Published private var motionHeadphoneConnected: Bool = false
 
+    @Published var gestureControlEnabled: Bool = false {
+        didSet {
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(gestureControlEnabled, forKey: DefaultsKey.gestureControlEnabled)
+        }
+    }
+
+    @Published var lastGestureEvent: HeadGestureEvent? = nil
+    @Published var gestureCalibrationState: GestureCalibrationState = .initial
+
+    @Published var nodMappedAction: GestureMappedAction = .promptResponse {
+        didSet {
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(nodMappedAction.rawValue, forKey: DefaultsKey.nodMappedAction)
+        }
+    }
+
+    @Published var shakeMappedAction: GestureMappedAction = .promptResponse {
+        didSet {
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(shakeMappedAction.rawValue, forKey: DefaultsKey.shakeMappedAction)
+        }
+    }
+
+    @Published var nodShortcutName: String = "" {
+        didSet {
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(nodShortcutName, forKey: DefaultsKey.nodShortcutName)
+        }
+    }
+
+    @Published var shakeShortcutName: String = "" {
+        didSet {
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(shakeShortcutName, forKey: DefaultsKey.shakeShortcutName)
+        }
+    }
+
+    @Published var gestureCooldownSeconds: Double = 0 {
+        didSet {
+            gestureDetector.additionalCooldownSeconds = gestureCooldownSeconds
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(gestureCooldownSeconds, forKey: DefaultsKey.gestureCooldownSeconds)
+        }
+    }
+
+    @Published var doubleConfirmEnabled: Bool = false {
+        didSet {
+            guard !isRestoringGestureSettings else { return }
+            defaults.set(doubleConfirmEnabled, forKey: DefaultsKey.doubleConfirmEnabled)
+        }
+    }
+
+    @Published var gestureFeedbackMessage: String? = nil
+    @Published var accessibilityTrusted: Bool = false
+    @Published var postEventAccessGranted: Bool = false
+    @Published var usesFallbackGestureProfile: Bool = true
+
+    private let defaults: UserDefaults
     private let audioMonitor = AudioDeviceMonitor()
     private let bluetoothMonitor = BluetoothMonitor()
     private let motionMonitor = HeadphoneMotionMonitor()
+    private let calibrationService: GestureCalibrationService
+    private let gestureDetector: HeadGestureDetector
+    private let promptActionExecutor: PromptActionExecutor
+    private let actionRouter: GestureActionRouter
+
     private var cancellables = Set<AnyCancellable>()
     private var bluetoothTask: Task<Void, Never>?
+    private var feedbackTask: Task<Void, Never>?
+    private var pendingConfirmation: (gesture: HeadGesture, timestamp: TimeInterval)?
+
     private let historyWindow: TimeInterval = 5.0
     private let smoothingTimeConstant: Double = 0.12
     private let historySampleInterval: TimeInterval = 1.0 / 30.0
     private let deadzoneDegrees: Double = 1.5
+    private let pendingConfirmationWindow: TimeInterval = 2.0
+
     private var lastMotionTimestamp: TimeInterval?
     private var lastHistoryTimestamp: TimeInterval?
+    private var previousCalibrationStage: GestureCalibrationStage
+    private var isRestoringGestureSettings: Bool = false
 
-    init() {
-        audioMonitor.$defaultOutputName
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] outputName in
-                guard let self else { return }
-                self.defaultOutputName = outputName
-                self.refreshBluetooth()
-            }
-            .store(in: &cancellables)
+    private enum DefaultsKey {
+        static let gestureControlEnabled = "HeadBird.GestureControlEnabled"
+        static let nodMappedAction = "HeadBird.NodMappedAction"
+        static let shakeMappedAction = "HeadBird.ShakeMappedAction"
+        static let nodShortcutName = "HeadBird.NodShortcutName"
+        static let shakeShortcutName = "HeadBird.ShakeShortcutName"
+        static let gestureCooldownSeconds = "HeadBird.GestureCooldownSeconds"
+        static let doubleConfirmEnabled = "HeadBird.DoubleConfirmEnabled"
+        static let pendingCalibrationStart = "HeadBird.PendingCalibrationStart"
+    }
 
-        audioMonitor.$devices
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.refreshBluetooth()
-            }
-            .store(in: &cancellables)
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
 
-        audioMonitor.$defaultOutputDevice
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.refreshBluetooth()
-            }
-            .store(in: &cancellables)
+        let calibrationService = GestureCalibrationService(defaults: defaults)
+        self.calibrationService = calibrationService
+        self.gestureDetector = HeadGestureDetector(profile: calibrationService.profile)
+        self.promptActionExecutor = PromptActionExecutor()
+        self.actionRouter = GestureActionRouter(
+            promptExecutor: promptActionExecutor,
+            shortcutExecutor: ShortcutActionExecutor()
+        )
+        self.previousCalibrationStage = calibrationService.state.stage
 
-        motionMonitor.$sample
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] sample in
-                guard let self else { return }
-                self.motionSample = sample
-                guard let sample else { return }
-                let dt = self.deltaTime(current: sample.timestamp)
-                let target = MotionPose(
-                    pitch: self.applyDeadzone(sample.pitch),
-                    roll: self.applyDeadzone(sample.roll),
-                    yaw: self.applyDeadzone(sample.yaw)
-                )
-                let alpha = self.smoothingAlpha(for: dt)
-                self.motionPose = self.motionPose.blending(toward: target, factor: alpha)
-                self.appendHistoryIfNeeded(timestamp: sample.timestamp, pose: self.motionPose)
-            }
-            .store(in: &cancellables)
+        loadGestureSettings()
+        bindSources()
 
-        motionMonitor.$isAvailable
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$motionAvailable)
-
-        motionMonitor.$authorizationStatus
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] status in
-                guard let self else { return }
-                let previousStatus = self.motionAuthorization
-                self.motionAuthorization = status
-
-                let becameAuthorizedWhileConnected =
-                    self.hasAnyAirPodsConnection &&
-                    previousStatus == .notDetermined &&
-                    status != .notDetermined &&
-                    status != .denied &&
-                    status != .restricted
-                if becameAuthorizedWhileConnected {
-                    self.motionMonitor.startIfPossible()
-                }
-            }
-            .store(in: &cancellables)
-
-        motionMonitor.$isStreaming
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$motionStreaming)
-
-        motionMonitor.$isHeadphoneConnected
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$motionHeadphoneConnected)
-
-        motionMonitor.$errorMessage
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$motionError)
-
-        bluetoothMonitor.onAuthorizationChanged = { [weak self] status in
-            Task { @MainActor [weak self] in
-                self?.bluetoothAuthorization = status
-                self?.refreshBluetooth()
-            }
-        }
         requestRequiredPermissions()
-
+        refreshGesturePermissions(promptForAccessibility: false)
         startBluetoothPolling()
     }
 
     deinit {
         bluetoothTask?.cancel()
+        feedbackTask?.cancel()
     }
 
     private var hasAnyAirPodsConnection: Bool {
@@ -179,6 +195,19 @@ final class HeadBirdModel: ObservableObject {
         )
     }
 
+    var canUseGestureControls: Bool {
+        motionStreaming && gestureCalibrationState.hasProfile
+    }
+
+    var routeConfig: GestureActionRouteConfig {
+        GestureActionRouteConfig(
+            nodAction: nodMappedAction,
+            shakeAction: shakeMappedAction,
+            nodShortcutName: nodShortcutName,
+            shakeShortcutName: shakeShortcutName
+        )
+    }
+
     func refreshNow() {
         audioMonitor.refresh()
         refreshBluetooth()
@@ -188,11 +217,214 @@ final class HeadBirdModel: ObservableObject {
         motionMonitor.recenter()
         motionPose = .zero
         motionHistory.removeAll()
+        setFeedback("Set zero complete.")
     }
 
     func requestRequiredPermissions() {
         bluetoothMonitor.requestAuthorizationIfNeeded()
         motionMonitor.startIfPossible()
+    }
+
+    func startGestureCalibration() {
+        calibrationService.startCalibration()
+        setFeedback("Calibration started.")
+    }
+
+    func beginCalibrationCapture() {
+        calibrationService.beginCaptureForCurrentStage()
+    }
+
+    func skipCalibrationWithFallbackProfile() {
+        calibrationService.skipCalibrationAndUseFallback()
+        gestureControlEnabled = true
+        setFeedback("Using fallback calibration profile.")
+    }
+
+    func clearCalibrationProfile() {
+        calibrationService.clearCalibrationProfile()
+        gestureControlEnabled = false
+        setFeedback("Calibration profile cleared.")
+    }
+
+    func requestAccessibilityPermissionPrompt() {
+        _ = promptActionExecutor.isAccessibilityTrusted(prompt: true)
+        refreshGesturePermissions(promptForAccessibility: false)
+    }
+
+    func requestPostEventPermissionPrompt() {
+        _ = promptActionExecutor.requestPostEventAccess()
+        refreshGesturePermissions(promptForAccessibility: false)
+    }
+
+    func refreshGesturePermissions(promptForAccessibility: Bool) {
+        accessibilityTrusted = promptActionExecutor.isAccessibilityTrusted(prompt: promptForAccessibility)
+        postEventAccessGranted = promptActionExecutor.isPostEventAccessGranted()
+    }
+
+    func toggleControlMode() {
+        gestureControlEnabled.toggle()
+        let message = gestureControlEnabled ? "Control mode enabled." : "Control mode disabled."
+        setFeedback(message)
+    }
+
+    private func bindSources() {
+        audioMonitor.$defaultOutputName
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] outputName in
+                guard let self else { return }
+                self.defaultOutputName = outputName
+                self.refreshBluetooth()
+            }
+            .store(in: &cancellables)
+
+        audioMonitor.$devices
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshBluetooth()
+            }
+            .store(in: &cancellables)
+
+        audioMonitor.$defaultOutputDevice
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshBluetooth()
+            }
+            .store(in: &cancellables)
+
+        motionMonitor.$sample
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sample in
+                guard let self else { return }
+                self.motionSample = sample
+                guard let sample else { return }
+
+                let dt = self.deltaTime(current: sample.timestamp)
+                let target = MotionPose(
+                    pitch: self.applyDeadzone(sample.pitch),
+                    roll: self.applyDeadzone(sample.roll),
+                    yaw: self.applyDeadzone(sample.yaw)
+                )
+                let alpha = self.smoothingAlpha(for: dt)
+                self.motionPose = self.motionPose.blending(toward: target, factor: alpha)
+                self.appendHistoryIfNeeded(timestamp: sample.timestamp, pose: self.motionPose)
+
+                self.calibrationService.ingest(sample: sample)
+                self.processGesture(sample: sample)
+            }
+            .store(in: &cancellables)
+
+        motionMonitor.$isAvailable
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$motionAvailable)
+
+        motionMonitor.$authorizationStatus
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self else { return }
+                let previousStatus = self.motionAuthorization
+                self.motionAuthorization = status
+
+                let becameAuthorizedWhileConnected =
+                    self.hasAnyAirPodsConnection &&
+                    previousStatus == .notDetermined &&
+                    status != .notDetermined &&
+                    status != .denied &&
+                    status != .restricted
+                if becameAuthorizedWhileConnected {
+                    self.motionMonitor.startIfPossible()
+                }
+            }
+            .store(in: &cancellables)
+
+        motionMonitor.$isStreaming
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$motionStreaming)
+
+        motionMonitor.$isHeadphoneConnected
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$motionHeadphoneConnected)
+
+        motionMonitor.$errorMessage
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$motionError)
+
+        bluetoothMonitor.onAuthorizationChanged = { [weak self] status in
+            Task { @MainActor [weak self] in
+                self?.bluetoothAuthorization = status
+                self?.refreshBluetooth()
+            }
+        }
+
+        calibrationService.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                guard let self else { return }
+                self.gestureCalibrationState = state
+
+                if state.stage == .completed, self.previousCalibrationStage != .completed {
+                    self.gestureControlEnabled = true
+                }
+                self.previousCalibrationStage = state.stage
+            }
+            .store(in: &cancellables)
+
+        calibrationService.$profile
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] profile in
+                guard let self else { return }
+                self.gestureDetector.profile = profile
+            }
+            .store(in: &cancellables)
+
+        calibrationService.$isUsingFallbackProfile
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$usesFallbackGestureProfile)
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: defaults)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.synchronizeGestureSettingsFromDefaults()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func processGesture(sample: HeadphoneMotionSample) {
+        guard gestureControlEnabled else { return }
+        guard canUseGestureControls else { return }
+
+        guard let event = gestureDetector.ingest(sample: sample) else {
+            return
+        }
+
+        lastGestureEvent = event
+
+        if doubleConfirmEnabled {
+            if let pendingConfirmation,
+               pendingConfirmation.gesture == event.gesture,
+               event.timestamp - pendingConfirmation.timestamp <= pendingConfirmationWindow {
+                self.pendingConfirmation = nil
+            } else {
+                pendingConfirmation = (gesture: event.gesture, timestamp: event.timestamp)
+                setFeedback("Repeat \(event.gesture.title) to confirm.")
+                return
+            }
+        }
+
+        let result = actionRouter.route(
+            event: event,
+            config: routeConfig,
+            recenterMotion: { [weak self] in
+                self?.recenterMotion()
+            },
+            toggleControlMode: { [weak self] in
+                guard let self else { return false }
+                self.gestureControlEnabled.toggle()
+                return self.gestureControlEnabled
+            }
+        )
+
+        setFeedback("\(event.gesture.title) \(Int(event.confidence * 100))%: \(result.message)")
+        refreshGesturePermissions(promptForAccessibility: false)
     }
 
     private func startBluetoothPolling() {
@@ -266,5 +498,101 @@ final class HeadBirdModel: ObservableObject {
     private func smoothingAlpha(for dt: TimeInterval) -> Double {
         let alpha = 1.0 - exp(-dt / smoothingTimeConstant)
         return max(0.05, min(0.6, alpha))
+    }
+
+    private func loadGestureSettings() {
+        isRestoringGestureSettings = true
+
+        gestureControlEnabled = defaults.bool(forKey: DefaultsKey.gestureControlEnabled)
+
+        if let storedNodAction = defaults.string(forKey: DefaultsKey.nodMappedAction),
+           let action = GestureMappedAction(rawValue: storedNodAction) {
+            nodMappedAction = action
+        }
+
+        if let storedShakeAction = defaults.string(forKey: DefaultsKey.shakeMappedAction),
+           let action = GestureMappedAction(rawValue: storedShakeAction) {
+            shakeMappedAction = action
+        }
+
+        nodShortcutName = defaults.string(forKey: DefaultsKey.nodShortcutName) ?? ""
+        shakeShortcutName = defaults.string(forKey: DefaultsKey.shakeShortcutName) ?? ""
+
+        if defaults.object(forKey: DefaultsKey.gestureCooldownSeconds) != nil {
+            gestureCooldownSeconds = defaults.double(forKey: DefaultsKey.gestureCooldownSeconds)
+        }
+
+        if defaults.object(forKey: DefaultsKey.doubleConfirmEnabled) != nil {
+            doubleConfirmEnabled = defaults.bool(forKey: DefaultsKey.doubleConfirmEnabled)
+        }
+
+        gestureDetector.additionalCooldownSeconds = gestureCooldownSeconds
+        gestureCalibrationState = calibrationService.state
+        usesFallbackGestureProfile = calibrationService.isUsingFallbackProfile
+        isRestoringGestureSettings = false
+    }
+
+    private func synchronizeGestureSettingsFromDefaults() {
+        if defaults.bool(forKey: DefaultsKey.pendingCalibrationStart) {
+            defaults.set(false, forKey: DefaultsKey.pendingCalibrationStart)
+            startGestureCalibration()
+            return
+        }
+
+        guard !isRestoringGestureSettings else { return }
+        isRestoringGestureSettings = true
+
+        let defaultControlMode = defaults.bool(forKey: DefaultsKey.gestureControlEnabled)
+        if gestureControlEnabled != defaultControlMode {
+            gestureControlEnabled = defaultControlMode
+        }
+
+        if let storedNodAction = defaults.string(forKey: DefaultsKey.nodMappedAction),
+           let action = GestureMappedAction(rawValue: storedNodAction),
+           action != nodMappedAction {
+            nodMappedAction = action
+        }
+
+        if let storedShakeAction = defaults.string(forKey: DefaultsKey.shakeMappedAction),
+           let action = GestureMappedAction(rawValue: storedShakeAction),
+           action != shakeMappedAction {
+            shakeMappedAction = action
+        }
+
+        let storedNodShortcut = defaults.string(forKey: DefaultsKey.nodShortcutName) ?? ""
+        if storedNodShortcut != nodShortcutName {
+            nodShortcutName = storedNodShortcut
+        }
+
+        let storedShakeShortcut = defaults.string(forKey: DefaultsKey.shakeShortcutName) ?? ""
+        if storedShakeShortcut != shakeShortcutName {
+            shakeShortcutName = storedShakeShortcut
+        }
+
+        if defaults.object(forKey: DefaultsKey.gestureCooldownSeconds) != nil {
+            let storedCooldown = defaults.double(forKey: DefaultsKey.gestureCooldownSeconds)
+            if storedCooldown != gestureCooldownSeconds {
+                gestureCooldownSeconds = storedCooldown
+            }
+        }
+
+        if defaults.object(forKey: DefaultsKey.doubleConfirmEnabled) != nil {
+            let storedDoubleConfirm = defaults.bool(forKey: DefaultsKey.doubleConfirmEnabled)
+            if storedDoubleConfirm != doubleConfirmEnabled {
+                doubleConfirmEnabled = storedDoubleConfirm
+            }
+        }
+
+        isRestoringGestureSettings = false
+    }
+
+    private func setFeedback(_ message: String) {
+        gestureFeedbackMessage = message
+        feedbackTask?.cancel()
+        feedbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard let self else { return }
+            self.gestureFeedbackMessage = nil
+        }
     }
 }
