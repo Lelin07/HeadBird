@@ -68,8 +68,8 @@ final class BluetoothMonitor: NSObject {
 
         didAttemptPermissionScan = true
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak central] in
-            central?.stopScan()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.centralManager?.stopScan()
         }
     }
 }
