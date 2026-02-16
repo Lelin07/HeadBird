@@ -1,0 +1,63 @@
+name: Xcode Build and Analyze
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  xcode-build-analyze-test:
+    name: xcode-build-analyze-test
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Print toolchain info
+        run: |
+          xcodebuild -version
+          sw_vers
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project HeadBird.xcodeproj \
+            -scheme HeadBird \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Analyze
+        run: |
+          xcodebuild analyze \
+            -project HeadBird.xcodeproj \
+            -scheme HeadBird \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -project HeadBird.xcodeproj \
+            -scheme HeadBird \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            -resultBundlePath "$RUNNER_TEMP/HeadBirdTests.xcresult"
+
+      - name: Upload test result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeadBirdTests-xcresult
+          path: ${{ runner.temp }}/HeadBirdTests.xcresult
+          if-no-files-found: warn
