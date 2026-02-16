@@ -1,0 +1,32 @@
+bug:
+  - '(?i)\bbug\b'
+  - '(?i)\bcrash(es|ed|ing)?\b'
+  - '(?i)\berror(s)?\b'
+  - '(?i)\bfail(s|ed|ing|ure)?\b'
+
+enhancement:
+  - '(?i)\bfeature request\b'
+  - '(?i)\benhancement\b'
+  - '(?i)\bimprove(ment)?\b'
+  - '(?i)\bwould like\b'
+
+question:
+  - '(?i)\bquestion\b'
+  - '(?i)\bhow to\b'
+  - '(?i)\bhelp\b'
+
+documentation:
+  - '(?i)\bdocs?\b'
+  - '(?i)\breadme\b'
+  - '(?i)\bdocumentation\b'
+
+tests:
+  - '(?i)\btest(s|ing)?\b'
+  - '(?i)\bcoverage\b'
+  - '(?i)\bxctest\b'
+
+ci:
+  - '(?i)\bci\b'
+  - '(?i)\bgithub actions?\b'
+  - '(?i)\bworkflow(s)?\b'
+  - '(?i)\bpipeline(s)?\b'
