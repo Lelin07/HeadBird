@@ -1,0 +1,52 @@
+app:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBird/Sources/App/**
+
+game:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBird/Sources/Game/**
+
+models:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBird/Sources/Models/**
+
+services:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBird/Sources/Services/**
+
+ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBird/Sources/UI/**
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBirdTests/**
+
+assets:
+  - changed-files:
+      - any-glob-to-any-file:
+          - HeadBird/Assets/**
+          - HeadBird/Assets.xcassets/**
+
+build:
+  - changed-files:
+      - any-glob-to-any-file:
+          - scripts/**
+          - HeadBird.xcodeproj/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - docs/**
