@@ -56,6 +56,7 @@ struct FlappyGameView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
             }
+            .frame(height: 200)
 
             HStack(spacing: 12) {
                 Text("Sensitivity")
