@@ -1,6 +1,4 @@
 import AppKit
-import CoreBluetooth
-import CoreMotion
 import SwiftUI
 
 struct ContentView: View {
@@ -10,24 +8,48 @@ struct ContentView: View {
 
     private enum Tab {
         case motion
+        case controls
         case game
         case about
     }
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
+            if let feedback = model.gestureFeedbackMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.caption.weight(.semibold))
+                    Text(feedback)
+                        .font(.caption)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
+                .transition(.opacity)
+            }
+
             Picker("", selection: $selectedTab) {
                 Text("Motion").tag(Tab.motion)
+                Text("Controls").tag(Tab.controls)
                 Text("Game").tag(Tab.game)
                 Text("About").tag(Tab.about)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 24)
-            .padding(.top, 10)
+            .padding(.top, model.gestureFeedbackMessage == nil ? 10 : 0)
 
             switch selectedTab {
             case .motion:
                 motionTab
+            case .controls:
+                controlsTab
             case .game:
                 FlappyGameView(isActive: true)
             case .about:
@@ -114,6 +136,261 @@ struct ContentView: View {
             .padding(.horizontal, 24)
         }
         .padding(.top, 6)
+    }
+
+    private var controlsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Gesture Controls")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                    StatusPill(status: model.motionConnectionStatus)
+                }
+
+                calibrationCard
+                mappingCard(
+                    title: "Nod Mapping",
+                    action: $model.nodMappedAction,
+                    shortcutName: $model.nodShortcutName
+                )
+                mappingCard(
+                    title: "Shake Mapping",
+                    action: $model.shakeMappedAction,
+                    shortcutName: $model.shakeShortcutName
+                )
+                permissionsCard
+                safetyCard
+                lastGestureCard
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+        }
+    }
+
+    private var calibrationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Calibration")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(model.gestureCalibrationState.stage.rawValue.capitalized)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(model.gestureCalibrationState.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if model.gestureCalibrationState.isCapturing {
+                ProgressView(value: model.gestureCalibrationState.progress)
+            }
+
+            HStack(spacing: 8) {
+                Button("Start") {
+                    model.startGestureCalibration()
+                }
+                .buttonStyle(.bordered)
+
+                Button(captureButtonTitle) {
+                    model.beginCalibrationCapture()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCaptureCalibrationStage)
+
+                Button("Use Fallback") {
+                    model.skipCalibrationWithFallbackProfile()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack {
+                Toggle("Using fallback profile", isOn: .constant(model.usesFallbackGestureProfile))
+                    .disabled(true)
+                    .toggleStyle(.switch)
+                Spacer()
+                Button("Clear Profile") {
+                    model.clearCalibrationProfile()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private func mappingCard(
+        title: String,
+        action: Binding<GestureMappedAction>,
+        shortcutName: Binding<String>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+
+            Picker("Action", selection: action) {
+                ForEach(GestureMappedAction.allCases) { map in
+                    Text(map.title).tag(map)
+                }
+            }
+            .pickerStyle(.menu)
+
+            if action.wrappedValue.requiresShortcutName {
+                TextField("Shortcut Name", text: shortcutName)
+                    .textFieldStyle(.roundedBorder)
+                Text("Example: Dark Mode Toggle, Focus Work")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private var permissionsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Permissions")
+                .font(.subheadline.weight(.semibold))
+
+            permissionRow(
+                title: "Accessibility",
+                isGranted: model.accessibilityTrusted,
+                help: "Needed for AX default/cancel button actions."
+            )
+
+            permissionRow(
+                title: "Event Posting",
+                isGranted: model.postEventAccessGranted,
+                help: "Needed for Return/Escape fallback events."
+            )
+
+            HStack(spacing: 8) {
+                Button("Request Accessibility") {
+                    model.requestAccessibilityPermissionPrompt()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Request Event Access") {
+                    model.requestPostEventPermissionPrompt()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Refresh") {
+                    model.refreshGesturePermissions(promptForAccessibility: false)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private func permissionRow(title: String, isGranted: Bool, help: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isGranted ? "checkmark.seal.fill" : "xmark.seal")
+                .foregroundStyle(isGranted ? Color.green : Color.orange)
+                .font(.caption)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                Text(help)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+    }
+
+    private var safetyCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Safety")
+                .font(.subheadline.weight(.semibold))
+
+            Toggle("Control mode enabled", isOn: $model.gestureControlEnabled)
+                .toggleStyle(.switch)
+
+            Toggle("Double-confirm gestures", isOn: $model.doubleConfirmEnabled)
+                .toggleStyle(.switch)
+
+            HStack(spacing: 10) {
+                Text("Extra Cooldown")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 100, alignment: .leading)
+                Slider(value: $model.gestureCooldownSeconds, in: 0...1.6, step: 0.05)
+                Text(String(format: "%.2fs", model.gestureCooldownSeconds))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 56, alignment: .trailing)
+            }
+
+            Text(model.canUseGestureControls ? "Ready for nod/shake input." : "Connect AirPods and complete calibration to enable controls.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private var lastGestureCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Last Gesture")
+                .font(.subheadline.weight(.semibold))
+
+            if let event = model.lastGestureEvent {
+                HStack {
+                    Text(event.gesture.title)
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text("\(Int(event.confidence * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("No gesture detected yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private var captureButtonTitle: String {
+        switch model.gestureCalibrationState.stage {
+        case .neutral:
+            return "Capture Neutral"
+        case .nod:
+            return "Capture Nod"
+        case .shake:
+            return "Capture Shake"
+        case .notStarted:
+            return "Start First"
+        case .completed:
+            return "Done"
+        }
+    }
+
+    private var canCaptureCalibrationStage: Bool {
+        let stage = model.gestureCalibrationState.stage
+        return !model.gestureCalibrationState.isCapturing && (stage == .neutral || stage == .nod || stage == .shake)
     }
 
     private func degrees(_ radians: Double) -> Double {
@@ -223,7 +500,7 @@ struct ContentView: View {
                 "AirPods connection status.",
                 "Default output-device status.",
                 "Headphone motion (pitch, roll, yaw).",
-                "Sensitivity value for game control."
+                "Gesture mapping and calibration settings."
             ]
         )
     }
