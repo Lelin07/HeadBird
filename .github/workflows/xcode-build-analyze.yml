@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,33 +30,50 @@ jobs:
           xcodebuild -version
           sw_vers
 
+      - name: Prepare CI logs directory
+        run: mkdir -p "$RUNNER_TEMP/ci-logs"
+
       - name: Build
         run: |
+          set -o pipefail
           xcodebuild build \
             -project HeadBird.xcodeproj \
             -scheme HeadBird \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$RUNNER_TEMP/ci-logs/build.log"
 
       - name: Analyze
         run: |
+          set -o pipefail
           xcodebuild analyze \
             -project HeadBird.xcodeproj \
             -scheme HeadBird \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$RUNNER_TEMP/ci-logs/analyze.log"
 
       - name: Test
         run: |
+          set -o pipefail
           xcodebuild test \
             -project HeadBird.xcodeproj \
             -scheme HeadBird \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
-            -resultBundlePath "$RUNNER_TEMP/HeadBirdTests.xcresult"
+            -resultBundlePath "$RUNNER_TEMP/HeadBirdTests.xcresult" \
+            2>&1 | tee "$RUNNER_TEMP/ci-logs/test.log"
+
+      - name: Upload CI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeadBird-ci-logs
+          path: ${{ runner.temp }}/ci-logs
+          if-no-files-found: warn
 
       - name: Upload test result bundle
         if: always()
