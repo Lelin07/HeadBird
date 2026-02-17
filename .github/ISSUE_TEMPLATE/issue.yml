@@ -1,0 +1,121 @@
+name: Issue
+description: Report a bug, request a feature, or ask a question about HeadBird.
+title: "[issue] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for opening an issue for HeadBird.
+        This form is used for bug reports, feature request ideas, and questions.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I searched existing issues before creating this one.
+          required: true
+        - label: I checked the README setup/troubleshooting sections.
+          required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      description: Pick the best match.
+      options:
+        - bug
+        - feature request
+        - question
+        - documentation
+        - tests
+        - ci
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of HeadBird is affected?
+      options:
+        - services (Bluetooth/motion/gesture)
+        - ui
+        - app
+        - models
+        - game
+        - tests
+        - build
+        - ci
+        - docs
+        - assets
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One clear sentence describing the issue.
+      placeholder: "Describe the problem, request, or question."
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Include context, impact, and any relevant constraints.
+      placeholder: "Add technical details that would help maintainers triage quickly."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce (for bug reports)
+      description: If this is a bug, provide exact steps and timing/permission details.
+      placeholder: |
+        1. Launch HeadBird
+        2. Connect AirPods
+        3. ...
+
+  - type: textarea
+    id: expected_vs_actual
+    attributes:
+      label: Expected vs actual behavior (for bug reports)
+      placeholder: |
+        Expected: ...
+        Actual: ...
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution (for feature request)
+      description: If this is a feature request, describe your suggested enhancement.
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you already tried (for question/support)
+      description: Include commands, settings, and troubleshooting steps.
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, Mac model/chip, AirPods model, Xcode version (if applicable).
+      placeholder: "macOS 14.x, MacBook Pro M3, AirPods Pro 2, Xcode 15.x"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs/output
+      description: Paste any relevant logs or command output.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, recordings, links to related issues/PRs, or extra notes.
