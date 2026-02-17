@@ -74,7 +74,7 @@ final class BluetoothMonitor: NSObject {
     }
 }
 
-extension BluetoothMonitor: CBCentralManagerDelegate {
+extension BluetoothMonitor: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         onAuthorizationChanged?(CBCentralManager.authorization)
         requestPermissionScanIfNeeded(using: central)
