@@ -47,13 +47,35 @@ final class GameStateTests: XCTestCase {
     func testStartResetsGameState() {
         let state = makeState()
         state.score = 5
+        state.opponentScore = 2
+        state.isPaused = true
         state.statusMessage = "Game Over"
 
         state.start(with: 0.7)
 
         XCTAssertTrue(state.isPlaying)
+        XCTAssertFalse(state.isPaused)
         XCTAssertTrue(state.hasPlayed)
         XCTAssertEqual(state.score, 0)
+        XCTAssertEqual(state.opponentScore, 0)
+        XCTAssertEqual(state.statusMessage, "")
+    }
+
+    @MainActor
+    func testPauseAndResumeTransitions() {
+        let state = makeState()
+        state.start(with: 0)
+
+        state.pause()
+
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertTrue(state.isPaused)
+        XCTAssertEqual(state.statusMessage, "Paused")
+
+        state.resume()
+
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertFalse(state.isPaused)
         XCTAssertEqual(state.statusMessage, "")
     }
 
@@ -79,6 +101,36 @@ final class GameStateTests: XCTestCase {
         XCTAssertEqual(state.statusMessage, "Game Over")
         XCTAssertEqual(state.highScore, 3)
         XCTAssertEqual(defaults.integer(forKey: highScoreKey), 3)
+    }
+
+    @MainActor
+    func testEndGameSupportsCustomMessage() {
+        let state = makeState()
+        state.score = 4
+
+        state.endGame(message: "You win 4-2")
+
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertFalse(state.isPaused)
+        XCTAssertEqual(state.statusMessage, "You win 4-2")
+        XCTAssertEqual(state.highScore, 4)
+    }
+
+    @MainActor
+    func testResetClearsRoundState() {
+        let state = makeState()
+        state.start(with: 0)
+        state.incrementScore()
+        state.incrementOpponentScore()
+        state.pause()
+
+        state.reset()
+
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertFalse(state.isPaused)
+        XCTAssertEqual(state.score, 0)
+        XCTAssertEqual(state.opponentScore, 0)
+        XCTAssertEqual(state.statusMessage, "Tap Play to start")
     }
 
     @MainActor
