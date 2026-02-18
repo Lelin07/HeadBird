@@ -83,4 +83,38 @@ enum HeadBirdModelLogic {
     static func isAirPodsName(_ name: String) -> Bool {
         normalize(name).contains("airpods")
     }
+
+    static func shouldStreamMotion(
+        hasAnyAirPodsConnection: Bool,
+        motionAuthorization: CMAuthorizationStatus,
+        isPopoverVisible: Bool,
+        activeTab: PopoverTab,
+        isGraphPlaying: Bool,
+        gestureControlEnabled: Bool,
+        isCalibrationCapturing: Bool
+    ) -> Bool {
+        guard hasAnyAirPodsConnection else { return false }
+        guard motionAuthorization != .denied, motionAuthorization != .restricted else { return false }
+        guard isPopoverVisible else { return false }
+
+        let needsMotionGraph = isPopoverVisible && activeTab == .motion && isGraphPlaying
+        let needsGame = isPopoverVisible && activeTab == .game
+        return needsMotionGraph || needsGame || gestureControlEnabled || isCalibrationCapturing
+    }
+
+    static func shouldPublishVisualMotionUpdates(
+        isPopoverVisible: Bool,
+        activeTab: PopoverTab,
+        isGraphPlaying: Bool
+    ) -> Bool {
+        guard isPopoverVisible else { return false }
+        switch activeTab {
+        case .motion:
+            return isGraphPlaying
+        case .game:
+            return true
+        case .controls, .about:
+            return false
+        }
+    }
 }
