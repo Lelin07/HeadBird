@@ -19,16 +19,26 @@ final class HeadBirdAppDelegate: NSObject, NSApplicationDelegate {
         model.requestRequiredPermissions()
         model.refreshNow()
     }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        model.setPopoverVisibility(false)
+    }
+
+    func applicationDidHide(_ notification: Notification) {
+        model.setPopoverVisibility(false)
+    }
 }
 
 @MainActor
-final class StatusBarController: NSObject {
+final class StatusBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let contextMenu = NSMenu()
     private let iconProvider = MenuBarIconProvider()
     private var statusItem: NSStatusItem?
     private var model: HeadBirdModel?
     private var cancellables = Set<AnyCancellable>()
+    private var lastRenderedAlpha: CGFloat?
+    private var lastRenderedToolTip: String?
 
     func start(with model: HeadBirdModel) {
         guard statusItem == nil else { return }
@@ -43,6 +53,7 @@ final class StatusBarController: NSObject {
     private func configurePopover(with model: HeadBirdModel) {
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentSize = NSSize(width: 420, height: 640)
         popover.contentViewController = NSHostingController(
             rootView: ContentView()
@@ -74,7 +85,12 @@ final class StatusBarController: NSObject {
     }
 
     private func bindModel(_ model: HeadBirdModel) {
-        model.objectWillChange
+        Publishers.CombineLatest4(
+            model.$connectedAirPods.removeDuplicates(),
+            model.$defaultOutputName.removeDuplicates(),
+            model.$motionStreaming.removeDuplicates(),
+            model.$motionHeadphoneConnected.removeDuplicates()
+        )
             .sink { [weak self, weak model] _ in
                 guard let self, let model else { return }
                 self.updateAppearance(for: model.headState)
@@ -84,13 +100,23 @@ final class StatusBarController: NSObject {
 
     private func updateAppearance(for state: HeadState) {
         guard let button = statusItem?.button else { return }
-        button.image = iconProvider.templateImage()
-        button.alphaValue = state == .asleep ? 0.62 : 1.0
+        let alpha = state == .asleep ? 0.62 : 1.0
+        if lastRenderedAlpha != alpha {
+            button.alphaValue = alpha
+            lastRenderedAlpha = alpha
+        }
 
         if let model {
-            button.toolTip = "\(model.statusTitle) - \(model.statusSubtitle)"
+            let tooltip = "\(model.statusTitle) - \(model.statusSubtitle)"
+            if lastRenderedToolTip != tooltip {
+                button.toolTip = tooltip
+                lastRenderedToolTip = tooltip
+            }
         } else {
-            button.toolTip = "HeadBird"
+            if lastRenderedToolTip != "HeadBird" {
+                button.toolTip = "HeadBird"
+                lastRenderedToolTip = "HeadBird"
+            }
         }
     }
 
@@ -134,6 +160,14 @@ final class StatusBarController: NSObject {
     @objc
     private func quitApp(_ sender: Any?) {
         NSApplication.shared.terminate(nil)
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        model?.setPopoverVisibility(true)
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        model?.setPopoverVisibility(false)
     }
 }
 
