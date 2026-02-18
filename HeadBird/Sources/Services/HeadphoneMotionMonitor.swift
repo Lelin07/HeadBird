@@ -7,6 +7,7 @@ struct HeadphoneMotionSample {
     let pitch: Double
     let roll: Double
     let yaw: Double
+    let sensorLocation: CMDeviceMotion.SensorLocation
     let rotationRate: CMRotationRate
     let gravity: CMAcceleration
     let userAcceleration: CMAcceleration
@@ -14,6 +15,11 @@ struct HeadphoneMotionSample {
 }
 
 final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Sendable {
+    private struct PendingMainPublish {
+        let sample: HeadphoneMotionSample
+        let authorizationStatus: CMAuthorizationStatus
+    }
+
     @Published private(set) var sample: HeadphoneMotionSample? = nil
     @Published private(set) var isAvailable: Bool = false
     @Published private(set) var isHeadphoneConnected: Bool = false
@@ -34,35 +40,57 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
     private let stateLock = NSLock()
     nonisolated(unsafe) private var referenceAttitude: CMAttitude?
     nonisolated(unsafe) private var lastAttitude: CMAttitude?
-    nonisolated(unsafe) private var lastPublishTimestamp: TimeInterval?
+    nonisolated(unsafe) private var lastSensorLocation: CMDeviceMotion.SensorLocation?
     nonisolated(unsafe) private var lastMotionSampleMonotonicTime: CFTimeInterval?
-    private let publishInterval: TimeInterval = 1.0 / 60.0
+    nonisolated(unsafe) private var lastPublishTimestamp: TimeInterval?
+    nonisolated(unsafe) private var publishInterval: TimeInterval = 1.0 / 45.0
+    nonisolated(unsafe) private var pendingMainPublish: PendingMainPublish?
+    nonisolated(unsafe) private var isMainPublishScheduled: Bool = false
     private let streamStaleTimeout: CFTimeInterval = 0.6
     private let failedStartRetryInterval: CFTimeInterval = 0.5
     private let streamWatchdogInterval: TimeInterval = 0.2
     private var streamWatchdog: Timer?
     private var lastFailedStartTime: CFTimeInterval?
+    private var streamingEnabled: Bool = false
 
     override init() {
         super.init()
         manager.delegate = self
         manager.startConnectionStatusUpdates()
         refreshStatus()
-        startStreamWatchdogIfNeeded()
-        startIfPossible()
     }
 
     func refreshStatus() {
-        isAvailable = manager.isDeviceMotionAvailable
-        authorizationStatus = CMHeadphoneMotionManager.authorizationStatus()
+        let available = manager.isDeviceMotionAvailable
+        if isAvailable != available {
+            isAvailable = available
+        }
+
+        let auth = CMHeadphoneMotionManager.authorizationStatus()
+        if authorizationStatus != auth {
+            authorizationStatus = auth
+        }
     }
 
     func startIfPossible() {
         let now = CFAbsoluteTimeGetCurrent()
 
         guard Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") != nil else {
-            errorMessage = "Missing NSMotionUsageDescription in Info.plist"
+            let message = "Missing NSMotionUsageDescription in Info.plist"
+            if errorMessage != message {
+                errorMessage = message
+            }
             registerFailedStartAttempt(at: now)
+            return
+        }
+
+        guard streamingEnabled else {
+            if manager.isDeviceMotionActive {
+                manager.stopDeviceMotionUpdates()
+            }
+            if isStreaming {
+                isStreaming = false
+            }
             return
         }
 
@@ -73,7 +101,10 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
         refreshStatus()
 
         if authorizationStatus == .denied || authorizationStatus == .restricted {
-            errorMessage = "Motion access not authorized"
+            let message = "Motion access not authorized"
+            if errorMessage != message {
+                errorMessage = message
+            }
             registerFailedStartAttempt(at: now)
             return
         }
@@ -83,17 +114,26 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
             if manager.isDeviceMotionActive {
                 manager.stopDeviceMotionUpdates()
             }
-            isStreaming = false
+            if isStreaming {
+                isStreaming = false
+            }
             if authorizationStatus == .notDetermined {
-                errorMessage = nil
+                if errorMessage != nil {
+                    errorMessage = nil
+                }
                 return
             }
-            errorMessage = "Headphone motion is not available"
+            let message = "Headphone motion is not available"
+            if errorMessage != message {
+                errorMessage = message
+            }
             registerFailedStartAttempt(at: now)
             return
         }
         if manager.isDeviceMotionActive {
-            errorMessage = nil
+            if errorMessage != nil {
+                errorMessage = nil
+            }
             return
         }
         guard !isStartAttemptThrottled(at: now) else {
@@ -104,18 +144,61 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
             guard let self else { return }
             self.handleMotionCallback(motion: motion, error: error)
         }
-        errorMessage = nil
+        if errorMessage != nil {
+            errorMessage = nil
+        }
         manager.startDeviceMotionUpdates(to: queue, withHandler: handler)
         lastFailedStartTime = nil
     }
 
     func stop() {
+        streamingEnabled = false
         manager.stopDeviceMotionUpdates()
         manager.stopConnectionStatusUpdates()
         stopStreamWatchdog()
         resetMotionState()
         sample = nil
-        isStreaming = false
+        if isStreaming {
+            isStreaming = false
+        }
+    }
+
+    func setStreamingEnabled(_ enabled: Bool) {
+        if streamingEnabled == enabled {
+            if enabled && !manager.isDeviceMotionActive {
+                startIfPossible()
+            }
+            return
+        }
+
+        streamingEnabled = enabled
+
+        if enabled {
+            if !manager.isConnectionStatusActive {
+                manager.startConnectionStatusUpdates()
+            }
+            startStreamWatchdogIfNeeded()
+            startIfPossible()
+            return
+        }
+
+        manager.stopDeviceMotionUpdates()
+        stopStreamWatchdog()
+        if isStreaming {
+            isStreaming = false
+        }
+    }
+
+    func setPreferredSampleRate(_ hertz: Double) {
+        let clampedHertz = max(15.0, min(60.0, hertz))
+        let interval = 1.0 / clampedHertz
+        stateLock.withLock {
+            if abs(publishInterval - interval) < 0.000_1 {
+                return
+            }
+            publishInterval = interval
+            lastPublishTimestamp = nil
+        }
     }
 
     func recenter() {
@@ -127,10 +210,16 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
 
     nonisolated private func handleMotionCallback(motion: CMDeviceMotion?, error: (any Error)?) {
         if let error {
-            Task { @MainActor [weak self] in
-                self?.errorMessage = error.localizedDescription
-                self?.isStreaming = false
-                self?.registerFailedStartAttempt(at: CFAbsoluteTimeGetCurrent())
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let message = error.localizedDescription
+                if self.errorMessage != message {
+                    self.errorMessage = message
+                }
+                if self.isStreaming {
+                    self.isStreaming = false
+                }
+                self.registerFailedStartAttempt(at: CFAbsoluteTimeGetCurrent())
             }
             return
         }
@@ -140,7 +229,8 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
         let timestamp = motion.timestamp
         stateLock.lock()
         lastMotionSampleMonotonicTime = CFAbsoluteTimeGetCurrent()
-        if let lastPublishTimestamp, timestamp - lastPublishTimestamp < publishInterval {
+        if let lastPublishTimestamp,
+           timestamp - lastPublishTimestamp < publishInterval {
             stateLock.unlock()
             return
         }
@@ -149,8 +239,14 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
 
         let authStatus = CMHeadphoneMotionManager.authorizationStatus()
 
+        let sensorLocation = motion.sensorLocation
         let absoluteAttitude = (motion.attitude.copy() as? CMAttitude) ?? motion.attitude
         stateLock.lock()
+        if let lastSensorLocation, lastSensorLocation != sensorLocation {
+            // Re-anchor when Core Motion switches the streaming earbud sensor.
+            referenceAttitude = (absoluteAttitude.copy() as? CMAttitude) ?? absoluteAttitude
+        }
+        lastSensorLocation = sensorLocation
         lastAttitude = absoluteAttitude
         stateLock.unlock()
 
@@ -168,20 +264,61 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
             pitch: attitude.pitch,
             roll: attitude.roll,
             yaw: attitude.yaw,
+            sensorLocation: sensorLocation,
             rotationRate: motion.rotationRate,
             gravity: motion.gravity,
             userAcceleration: motion.userAcceleration,
             quaternion: attitude.quaternion
         )
 
-        Task { @MainActor [weak self] in
-            self?.authorizationStatus = authStatus
-            self?.isHeadphoneConnected = true
-            self?.sample = sample
-            self?.isStreaming = true
-            self?.errorMessage = nil
-            self?.lastFailedStartTime = nil
+        enqueueMainPublish(sample: sample, authorizationStatus: authStatus)
+    }
+
+    nonisolated private func enqueueMainPublish(sample: HeadphoneMotionSample, authorizationStatus: CMAuthorizationStatus) {
+        stateLock.lock()
+        pendingMainPublish = PendingMainPublish(sample: sample, authorizationStatus: authorizationStatus)
+        let shouldSchedule = !isMainPublishScheduled
+        if shouldSchedule {
+            isMainPublishScheduled = true
         }
+        stateLock.unlock()
+
+        guard shouldSchedule else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.flushPendingMainPublish()
+        }
+    }
+
+    private func flushPendingMainPublish() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.flushPendingMainPublish()
+            }
+            return
+        }
+
+        let pending: PendingMainPublish? = stateLock.withLock {
+            let value = pendingMainPublish
+            pendingMainPublish = nil
+            isMainPublishScheduled = false
+            return value
+        }
+
+        guard let pending else { return }
+        if authorizationStatus != pending.authorizationStatus {
+            authorizationStatus = pending.authorizationStatus
+        }
+        if !isHeadphoneConnected {
+            isHeadphoneConnected = true
+        }
+        sample = pending.sample
+        if !isStreaming {
+            isStreaming = true
+        }
+        if errorMessage != nil {
+            errorMessage = nil
+        }
+        lastFailedStartTime = nil
     }
 
     private func startStreamWatchdogIfNeeded() {
@@ -239,8 +376,11 @@ final class HeadphoneMotionMonitor: NSObject, ObservableObject, @unchecked Senda
         stateLock.withLock {
             referenceAttitude = nil
             lastAttitude = nil
-            lastPublishTimestamp = nil
+            lastSensorLocation = nil
             lastMotionSampleMonotonicTime = nil
+            lastPublishTimestamp = nil
+            pendingMainPublish = nil
+            isMainPublishScheduled = false
         }
     }
 }
@@ -251,7 +391,9 @@ extension HeadphoneMotionMonitor: CMHeadphoneMotionManagerDelegate {
             guard let self else { return }
             self.isHeadphoneConnected = true
             self.refreshStatus()
-            self.startIfPossible()
+            if self.streamingEnabled {
+                self.startIfPossible()
+            }
         }
     }
 
