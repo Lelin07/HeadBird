@@ -3,15 +3,8 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: HeadBirdModel
-    @State private var selectedTab: Tab = .motion
+    @State private var selectedTab: PopoverTab = .motion
     @State private var graphStyle: MotionHistoryGraph.GraphStyle = .lines
-
-    private enum Tab {
-        case motion
-        case controls
-        case game
-        case about
-    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -36,10 +29,10 @@ struct ContentView: View {
             }
 
             Picker("", selection: $selectedTab) {
-                Text("Motion").tag(Tab.motion)
-                Text("Controls").tag(Tab.controls)
-                Text("Game").tag(Tab.game)
-                Text("About").tag(Tab.about)
+                Text("Motion").tag(PopoverTab.motion)
+                Text("Controls").tag(PopoverTab.controls)
+                Text("Game").tag(PopoverTab.game)
+                Text("About").tag(PopoverTab.about)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 24)
@@ -51,12 +44,18 @@ struct ContentView: View {
             case .controls:
                 controlsTab
             case .game:
-                FlappyGameView(isActive: true)
+                FlappyGameView(isActive: model.isPopoverPresented)
             case .about:
                 aboutTab
             }
         }
         .padding(.bottom, 18)
+        .onAppear {
+            model.setActiveTab(selectedTab)
+        }
+        .onChange(of: selectedTab) { _, tab in
+            model.setActiveTab(tab)
+        }
     }
 
     private var motionTab: some View {
@@ -103,6 +102,17 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 180)
+
+                Button {
+                    model.toggleGraphPlaying()
+                } label: {
+                    Image(systemName: model.isGraphPlaying ? "stop.fill" : "play.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel(model.isGraphPlaying ? "Stop graph" : "Play graph")
+                .help(model.isGraphPlaying ? "Stop graph updates" : "Play graph updates")
+                .disabled(!isEnabled)
 
                 Button("Set Zero") {
                     model.recenterMotion()
