@@ -32,9 +32,15 @@ final class AudioDeviceMonitor: ObservableObject {
                 ?? defaultName.map { AudioDevice(id: id, name: $0, transportType: Self.deviceTransportType(for: id)) }
         }
 
-        devices = outputDevices
-        defaultOutputName = defaultName
-        defaultOutputDevice = defaultDevice
+        if devices != outputDevices {
+            devices = outputDevices
+        }
+        if defaultOutputName != defaultName {
+            defaultOutputName = defaultName
+        }
+        if defaultOutputDevice != defaultDevice {
+            defaultOutputDevice = defaultDevice
+        }
     }
 
     private static func fetchOutputDevices() -> [AudioDevice] {
