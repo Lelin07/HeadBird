@@ -2,4 +2,4 @@ blank_issues_enabled: false
 contact_links:
   - name: HeadBird setup and troubleshooting
     url: https://github.com/Lelin07/HeadBird#readme
-    about: Check install, permissions, testing, and troubleshooting guidance in the README first.
+    about: Start with the README troubleshooting guide before opening an issue.
