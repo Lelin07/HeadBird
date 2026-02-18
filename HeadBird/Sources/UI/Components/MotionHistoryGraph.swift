@@ -19,16 +19,19 @@ struct MotionHistoryGraph: View {
     private let yawColor = Color.green
 
     var body: some View {
-        GeometryReader { proxy in
+        GeometryReader { _ in
             Canvas { context, size in
                 if showGrid {
                     drawGrid(in: &context, size: size)
                 }
                 guard samples.count > 1 else { return }
 
-                let pitchPath = path(for: samples, size: size) { normalized($0.pose.pitch) }
-                let rollPath = path(for: samples, size: size) { normalized($0.pose.roll) }
-                let yawPath = path(for: samples, size: size) { normalized($0.pose.yaw) }
+                let plottedSamples = decimated(samples, maxPoints: max(Int(size.width), 2))
+                guard plottedSamples.count > 1 else { return }
+
+                let pitchPath = path(for: plottedSamples.map { normalized($0.pose.pitch) }, size: size)
+                let rollPath = path(for: plottedSamples.map { normalized($0.pose.roll) }, size: size)
+                let yawPath = path(for: plottedSamples.map { normalized($0.pose.yaw) }, size: size)
 
                 switch style {
                 case .lines:
@@ -49,12 +52,12 @@ struct MotionHistoryGraph: View {
         )
     }
 
-    private func path(for samples: [MotionHistorySample], size: CGSize, value: (MotionHistorySample) -> Double) -> Path {
+    private func path(for values: [Double], size: CGSize) -> Path {
         var path = Path()
-        let count = samples.count
-        for (index, sample) in samples.enumerated() {
+        let count = values.count
+        for (index, value) in values.enumerated() {
             let x = CGFloat(index) / CGFloat(max(count - 1, 1)) * size.width
-            let y = size.height / 2 - CGFloat(value(sample)) * (size.height / 2)
+            let y = size.height / 2 - CGFloat(value) * (size.height / 2)
             if index == 0 {
                 path.move(to: CGPoint(x: x, y: y))
             } else {
@@ -62,6 +65,27 @@ struct MotionHistoryGraph: View {
             }
         }
         return path
+    }
+
+    private func decimated(_ samples: [MotionHistorySample], maxPoints: Int) -> [MotionHistorySample] {
+        guard samples.count > maxPoints else { return samples }
+        guard maxPoints > 1 else { return [samples[samples.count - 1]] }
+
+        let strideSize = max(1, Int(ceil(Double(samples.count) / Double(maxPoints))))
+        var output: [MotionHistorySample] = []
+        output.reserveCapacity(maxPoints)
+
+        var index = 0
+        while index < samples.count {
+            output.append(samples[index])
+            index += strideSize
+        }
+
+        if let lastSample = samples.last, output.last != lastSample {
+            output.append(lastSample)
+        }
+
+        return output
     }
 
     private func normalized(_ radians: Double) -> Double {
