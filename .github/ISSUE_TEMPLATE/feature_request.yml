@@ -1,0 +1,58 @@
+name: Feature request
+description: Suggest an enhancement for HeadBird.
+title: "[feature request] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem_statement
+    attributes:
+      label: Problem statement
+      description: What limitation or pain point are you trying to solve?
+      placeholder: "Describe the current limitation."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: What do you want HeadBird to do?
+      placeholder: "Describe the enhancement."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area (optional)
+      options:
+        - services
+        - ui
+        - app
+        - models
+        - game
+        - tests
+        - build
+        - ci
+        - docs
+        - assets
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+
+  - type: input
+    id: environment_constraints
+    attributes:
+      label: Environment constraints (optional)
+      description: Hardware or software constraints, if relevant.
+      placeholder: "macOS version, Mac model, AirPods model"
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context (optional)
