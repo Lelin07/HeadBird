@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		73B100062F3E000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7353F8B82F3B581500EFE5F3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7353F8BF2F3B581500EFE5F3;
+			remoteInfo = HeadBird;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		7353F8C02F3B581500EFE5F3 /* HeadBird.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HeadBird.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		73B100012F3E000100000001 /* HeadBirdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HeadBirdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -61,16 +71,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXContainerItemProxy section */
-		73B100062F3E000100000001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 7353F8B82F3B581500EFE5F3 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7353F8BF2F3B581500EFE5F3;
-			remoteInfo = HeadBird;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		7353F8BF2F3B581500EFE5F3 /* HeadBird */ = {
@@ -412,8 +412,8 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = HeadBird;
 				TEST_HOST = "";
+				TEST_TARGET_NAME = HeadBird;
 			};
 			name = Debug;
 		};
@@ -437,8 +437,8 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = HeadBird;
 				TEST_HOST = "";
+				TEST_TARGET_NAME = HeadBird;
 			};
 			name = Release;
 		};
