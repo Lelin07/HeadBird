@@ -1,0 +1,47 @@
+name: Question
+description: Ask a usage or implementation question about HeadBird.
+title: "[question] "
+labels:
+  - question
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      placeholder: "What do you need help with?"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area (optional)
+      options:
+        - setup/install
+        - permissions
+        - gesture controls
+        - motion visualization
+        - game
+        - testing/build
+        - ci
+        - docs
+        - other
+    validations:
+      required: false
+
+  - type: textarea
+    id: what_i_tried
+    attributes:
+      label: What I tried (optional)
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment (optional)
+      description: macOS version, Mac model/chip, AirPods model, optional Xcode version.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      render: shell
