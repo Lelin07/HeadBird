@@ -4,7 +4,9 @@ import Foundation
 @MainActor
 final class GameState: ObservableObject {
     @Published var isPlaying: Bool = false
+    @Published var isPaused: Bool = false
     @Published var score: Int = 0
+    @Published var opponentScore: Int = 0
     @Published var highScore: Int
     @Published var statusMessage: String = "Tap Play to start"
     @Published var sensitivity: Double = 1.0
@@ -44,20 +46,49 @@ final class GameState: ObservableObject {
     func start(with pitch: Double) {
         baselinePitch = pitch
         score = 0
+        opponentScore = 0
         isPlaying = true
+        isPaused = false
         hasPlayed = true
         statusMessage = ""
     }
 
-    func endGame() {
+    func pause() {
+        guard isPlaying else { return }
         isPlaying = false
-        statusMessage = "Game Over"
+        isPaused = true
+        statusMessage = "Paused"
+    }
+
+    func resume() {
+        guard isPaused else { return }
+        isPlaying = true
+        isPaused = false
+        statusMessage = ""
+    }
+
+    func reset(message: String = "Tap Play to start") {
+        score = 0
+        opponentScore = 0
+        isPlaying = false
+        isPaused = false
+        statusMessage = message
+    }
+
+    func endGame(message: String = "Game Over") {
+        isPlaying = false
+        isPaused = false
+        statusMessage = message
         updateHighScoreIfNeeded()
     }
 
     func incrementScore() {
         score += 1
         updateHighScoreIfNeeded()
+    }
+
+    func incrementOpponentScore() {
+        opponentScore += 1
     }
 
     var pitchDelta: Double {
