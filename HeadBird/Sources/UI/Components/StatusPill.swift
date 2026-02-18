@@ -2,15 +2,11 @@ import SwiftUI
 
 struct StatusPill: View {
     let status: MotionConnectionStatus
-    @State private var isWaitingPulseVisible = false
+    @State private var isWaitingPulseOn: Bool = false
 
     var body: some View {
-        return HStack(spacing: 6) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 8, height: 8)
-                .opacity(dotOpacity)
-                .animation(waitingAnimation, value: isWaitingPulseVisible)
+        HStack(spacing: 6) {
+            statusDot
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -22,10 +18,10 @@ struct StatusPill: View {
                 .fill(Color.secondary.opacity(0.12))
         )
         .onAppear {
-            syncWaitingPulseState()
+            updatePulseState(for: status)
         }
-        .onChange(of: status) { _, _ in
-            syncWaitingPulseState()
+        .onChange(of: status) { _, newStatus in
+            updatePulseState(for: newStatus)
         }
     }
 
@@ -55,17 +51,24 @@ struct StatusPill: View {
         }
     }
 
-    private var dotOpacity: Double {
-        guard status == .waiting else { return 1.0 }
-        return isWaitingPulseVisible ? 1.0 : 0.25
+    private var statusDot: some View {
+        Circle()
+            .fill(dotColor)
+            .frame(width: 8, height: 8)
+            .opacity(status == .waiting && isWaitingPulseOn ? 0.25 : 1.0)
     }
 
-    private var waitingAnimation: Animation? {
-        guard status == .waiting else { return nil }
-        return .easeInOut(duration: 0.85).repeatForever(autoreverses: true)
-    }
+    private func updatePulseState(for status: MotionConnectionStatus) {
+        guard status == .waiting else {
+            withAnimation(.none) {
+                isWaitingPulseOn = false
+            }
+            return
+        }
 
-    private func syncWaitingPulseState() {
-        isWaitingPulseVisible = status == .waiting
+        isWaitingPulseOn = false
+        withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+            isWaitingPulseOn = true
+        }
     }
 }
