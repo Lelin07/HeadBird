@@ -8,35 +8,15 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            if let feedback = model.gestureFeedbackMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.caption.weight(.semibold))
-                    Text(feedback)
-                        .font(.caption)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.14))
-                )
-                .padding(.horizontal, 24)
-                .padding(.top, 10)
-                .transition(.opacity)
-            }
-
             Picker("", selection: $selectedTab) {
                 Text("Motion").tag(PopoverTab.motion)
                 Text("Controls").tag(PopoverTab.controls)
-                Text("Game").tag(PopoverTab.game)
+                Text("Games").tag(PopoverTab.game)
                 Text("About").tag(PopoverTab.about)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 24)
-            .padding(.top, model.gestureFeedbackMessage == nil ? 10 : 0)
+            .padding(.top, 10)
 
             switch selectedTab {
             case .motion:
@@ -44,7 +24,7 @@ struct ContentView: View {
             case .controls:
                 controlsTab
             case .game:
-                FlappyGameView(isActive: model.isPopoverPresented)
+                GamesView(isActive: model.isPopoverPresented)
             case .about:
                 aboutTab
             }
