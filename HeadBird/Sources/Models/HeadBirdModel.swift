@@ -25,10 +25,13 @@ final class HeadBirdModel: ObservableObject {
     @Published var motionStreaming: Bool = false
     @Published var motionError: String? = nil
     @Published var motionSensitivity: Double = 1.0
-    @Published private var motionHeadphoneConnected: Bool = false
+    @Published private(set) var motionHeadphoneConnected: Bool = false
+    @Published private(set) var isGraphPlaying: Bool = false
+    @Published private(set) var isPopoverPresented: Bool = false
 
     @Published var gestureControlEnabled: Bool = false {
         didSet {
+            reevaluateMotionDemand()
             guard !isRestoringGestureSettings else { return }
             defaults.set(gestureControlEnabled, forKey: DefaultsKey.gestureControlEnabled)
         }
@@ -100,15 +103,20 @@ final class HeadBirdModel: ObservableObject {
     private var pendingConfirmation: (gesture: HeadGesture, timestamp: TimeInterval)?
 
     private let historyWindow: TimeInterval = 5.0
-    private let smoothingTimeConstant: Double = 0.12
-    private let historySampleInterval: TimeInterval = 1.0 / 30.0
+    private let smoothingTimeConstant: Double = 0.08
+    private let historySampleInterval: TimeInterval = 1.0 / 60.0
+    private let gestureProcessingInterval: TimeInterval = 1.0 / 40.0
     private let deadzoneDegrees: Double = 1.5
     private let pendingConfirmationWindow: TimeInterval = 2.0
 
     private var lastMotionTimestamp: TimeInterval?
     private var lastHistoryTimestamp: TimeInterval?
+    private var lastGestureProcessingTimestamp: TimeInterval?
+    private var lastSampleSensorLocation: CMDeviceMotion.SensorLocation?
     private var previousCalibrationStage: GestureCalibrationStage
     private var isRestoringGestureSettings: Bool = false
+    private var isPopoverVisible: Bool = false
+    private var activePopoverTab: PopoverTab = .motion
 
     private enum DefaultsKey {
         static let gestureControlEnabled = "HeadBird.GestureControlEnabled"
@@ -213,16 +221,63 @@ final class HeadBirdModel: ObservableObject {
         refreshBluetooth()
     }
 
-    func recenterMotion() {
+    func setPopoverVisible(_ isVisible: Bool, activeTab: PopoverTab) {
+        let wasVisible = isPopoverVisible
+        let previousTab = activePopoverTab
+
+        isPopoverVisible = isVisible
+        isPopoverPresented = isVisible
+        activePopoverTab = activeTab
+
+        if isVisible && (!wasVisible || previousTab != activeTab) {
+            handleTabTransition(from: previousTab, to: activeTab)
+        }
+
+        reevaluateMotionDemand()
+    }
+
+    func setPopoverVisibility(_ isVisible: Bool) {
+        setPopoverVisible(isVisible, activeTab: activePopoverTab)
+    }
+
+    func setActiveTab(_ tab: PopoverTab) {
+        let previousTab = activePopoverTab
+        activePopoverTab = tab
+
+        if isPopoverVisible && previousTab != tab {
+            handleTabTransition(from: previousTab, to: tab)
+        }
+
+        reevaluateMotionDemand()
+    }
+
+    func setGraphPlaying(_ isPlaying: Bool) {
+        guard isGraphPlaying != isPlaying else { return }
+        isGraphPlaying = isPlaying
+        reevaluateMotionDemand()
+    }
+
+    func toggleGraphPlaying() {
+        setGraphPlaying(!isGraphPlaying)
+    }
+
+    func recenterMotion(showFeedback: Bool = true) {
         motionMonitor.recenter()
         motionPose = .zero
         motionHistory.removeAll()
-        setFeedback("Set zero complete.")
+        lastMotionTimestamp = nil
+        lastHistoryTimestamp = nil
+        lastGestureProcessingTimestamp = nil
+        lastSampleSensorLocation = nil
+        if showFeedback {
+            setFeedback("Set zero complete.")
+        }
     }
 
     func requestRequiredPermissions() {
         bluetoothMonitor.requestAuthorizationIfNeeded()
-        motionMonitor.startIfPossible()
+        motionMonitor.refreshStatus()
+        reevaluateMotionDemand()
     }
 
     func startGestureCalibration() {
@@ -269,6 +324,7 @@ final class HeadBirdModel: ObservableObject {
 
     private func bindSources() {
         audioMonitor.$defaultOutputName
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] outputName in
                 guard let self else { return }
@@ -278,6 +334,7 @@ final class HeadBirdModel: ObservableObject {
             .store(in: &cancellables)
 
         audioMonitor.$devices
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshBluetooth()
@@ -285,6 +342,7 @@ final class HeadBirdModel: ObservableObject {
             .store(in: &cancellables)
 
         audioMonitor.$defaultOutputDevice
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshBluetooth()
@@ -295,21 +353,39 @@ final class HeadBirdModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sample in
                 guard let self else { return }
-                self.motionSample = sample
                 guard let sample else { return }
 
-                let dt = self.deltaTime(current: sample.timestamp)
-                let target = MotionPose(
-                    pitch: self.applyDeadzone(sample.pitch),
-                    roll: self.applyDeadzone(sample.roll),
-                    yaw: self.applyDeadzone(sample.yaw)
-                )
-                let alpha = self.smoothingAlpha(for: dt)
-                self.motionPose = self.motionPose.blending(toward: target, factor: alpha)
-                self.appendHistoryIfNeeded(timestamp: sample.timestamp, pose: self.motionPose)
+                if self.shouldPublishVisualMotionUpdates {
+                    self.motionSample = sample
 
-                self.calibrationService.ingest(sample: sample)
-                self.processGesture(sample: sample)
+                    if let lastSampleSensorLocation,
+                       lastSampleSensorLocation != sample.sensorLocation {
+                        self.lastMotionTimestamp = nil
+                    }
+                    self.lastSampleSensorLocation = sample.sensorLocation
+
+                    let historyPose = MotionPose(
+                        pitch: sample.pitch,
+                        roll: sample.roll,
+                        yaw: sample.yaw
+                    )
+                    let dt = self.deltaTime(current: sample.timestamp)
+                    let target = MotionPose(
+                        pitch: self.applyDeadzone(sample.pitch),
+                        roll: self.applyDeadzone(sample.roll),
+                        yaw: self.applyDeadzone(sample.yaw)
+                    )
+                    let alpha = self.smoothingAlpha(for: dt)
+                    self.motionPose = self.blendPose(current: self.motionPose, target: target, factor: alpha)
+                    self.appendHistoryIfNeeded(timestamp: sample.timestamp, pose: historyPose)
+                }
+
+                if self.gestureCalibrationState.isCapturing {
+                    self.calibrationService.ingest(sample: sample)
+                }
+                if self.shouldProcessGestureSample(timestamp: sample.timestamp) {
+                    self.processGesture(sample: sample)
+                }
             }
             .store(in: &cancellables)
 
@@ -321,18 +397,9 @@ final class HeadBirdModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
                 guard let self else { return }
-                let previousStatus = self.motionAuthorization
+                guard self.motionAuthorization != status else { return }
                 self.motionAuthorization = status
-
-                let becameAuthorizedWhileConnected =
-                    self.hasAnyAirPodsConnection &&
-                    previousStatus == .notDetermined &&
-                    status != .notDetermined &&
-                    status != .denied &&
-                    status != .restricted
-                if becameAuthorizedWhileConnected {
-                    self.motionMonitor.startIfPossible()
-                }
+                self.reevaluateMotionDemand()
             }
             .store(in: &cancellables)
 
@@ -342,7 +409,13 @@ final class HeadBirdModel: ObservableObject {
 
         motionMonitor.$isHeadphoneConnected
             .receive(on: DispatchQueue.main)
-            .assign(to: &$motionHeadphoneConnected)
+            .sink { [weak self] isConnected in
+                guard let self else { return }
+                guard self.motionHeadphoneConnected != isConnected else { return }
+                self.motionHeadphoneConnected = isConnected
+                self.reevaluateMotionDemand()
+            }
+            .store(in: &cancellables)
 
         motionMonitor.$errorMessage
             .receive(on: DispatchQueue.main)
@@ -350,8 +423,10 @@ final class HeadBirdModel: ObservableObject {
 
         bluetoothMonitor.onAuthorizationChanged = { [weak self] status in
             Task { @MainActor [weak self] in
-                self?.bluetoothAuthorization = status
-                self?.refreshBluetooth()
+                guard let self else { return }
+                guard self.bluetoothAuthorization != status else { return }
+                self.bluetoothAuthorization = status
+                self.refreshBluetooth()
             }
         }
 
@@ -365,6 +440,7 @@ final class HeadBirdModel: ObservableObject {
                     self.gestureControlEnabled = true
                 }
                 self.previousCalibrationStage = state.stage
+                self.reevaluateMotionDemand()
             }
             .store(in: &cancellables)
 
@@ -427,13 +503,34 @@ final class HeadBirdModel: ObservableObject {
         refreshGesturePermissions(promptForAccessibility: false)
     }
 
+    private func shouldProcessGestureSample(timestamp: TimeInterval) -> Bool {
+        guard gestureControlEnabled, canUseGestureControls else {
+            lastGestureProcessingTimestamp = nil
+            return false
+        }
+        if let lastGestureProcessingTimestamp,
+           timestamp - lastGestureProcessingTimestamp < gestureProcessingInterval {
+            return false
+        }
+        lastGestureProcessingTimestamp = timestamp
+        return true
+    }
+
     private func startBluetoothPolling() {
         bluetoothTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 self.audioMonitor.refresh()
                 self.refreshBluetooth()
-                try? await Task.sleep(for: .seconds(1.0))
+                let pollInterval: TimeInterval
+                if self.isPopoverVisible || self.shouldStreamMotion {
+                    pollInterval = 1.5
+                } else if self.hasAnyAirPodsConnection {
+                    pollInterval = 3.0
+                } else {
+                    pollInterval = 6.0
+                }
+                try? await Task.sleep(for: .seconds(pollInterval))
             }
         }
     }
@@ -455,16 +552,19 @@ final class HeadBirdModel: ObservableObject {
             names.insert(device.name)
         }
 
-        connectedAirPods = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        let hasConnectedAirPods = hasAnyAirPodsConnection
+        let sortedNames = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        if connectedAirPods != sortedNames {
+            connectedAirPods = sortedNames
+        }
+
+        let hasConnectedAirPods = !sortedNames.isEmpty || motionHeadphoneConnected
 
         if !hadConnectedAirPods && hasConnectedAirPods {
             requestRequiredPermissions()
         }
 
-        let canRequestMotion = motionAuthorization != .denied && motionAuthorization != .restricted
-        if hasConnectedAirPods && canRequestMotion {
-            motionMonitor.startIfPossible()
+        if hadConnectedAirPods != hasConnectedAirPods {
+            reevaluateMotionDemand()
         }
     }
 
@@ -497,7 +597,74 @@ final class HeadBirdModel: ObservableObject {
 
     private func smoothingAlpha(for dt: TimeInterval) -> Double {
         let alpha = 1.0 - exp(-dt / smoothingTimeConstant)
-        return max(0.05, min(0.6, alpha))
+        if activePopoverTab == .motion && isGraphPlaying {
+            return max(0.55, min(0.98, alpha))
+        }
+        return max(0.12, min(0.85, alpha))
+    }
+
+    private func blendPose(current: MotionPose, target: MotionPose, factor: Double) -> MotionPose {
+        let f = max(0.0, min(1.0, factor))
+        return MotionPose(
+            pitch: current.pitch + (target.pitch - current.pitch) * f,
+            roll: blendAngle(current: current.roll, target: target.roll, factor: f),
+            yaw: blendAngle(current: current.yaw, target: target.yaw, factor: f)
+        )
+    }
+
+    private func blendAngle(current: Double, target: Double, factor: Double) -> Double {
+        let delta = atan2(sin(target - current), cos(target - current))
+        return current + delta * factor
+    }
+
+    private var shouldStreamMotion: Bool {
+        HeadBirdModelLogic.shouldStreamMotion(
+            hasAnyAirPodsConnection: hasAnyAirPodsConnection,
+            motionAuthorization: motionAuthorization,
+            isPopoverVisible: isPopoverVisible,
+            activeTab: activePopoverTab,
+            isGraphPlaying: isGraphPlaying,
+            gestureControlEnabled: gestureControlEnabled,
+            isCalibrationCapturing: gestureCalibrationState.isCapturing
+        )
+    }
+
+    private var shouldPublishVisualMotionUpdates: Bool {
+        HeadBirdModelLogic.shouldPublishVisualMotionUpdates(
+            isPopoverVisible: isPopoverVisible,
+            activeTab: activePopoverTab,
+            isGraphPlaying: isGraphPlaying
+        )
+    }
+
+    private var preferredMotionSampleRate: Double {
+        if shouldPublishVisualMotionUpdates {
+            return 45
+        }
+        if gestureCalibrationState.isCapturing {
+            return 40
+        }
+        if gestureControlEnabled {
+            return 30
+        }
+        return 20
+    }
+
+    private func reevaluateMotionDemand() {
+        motionMonitor.setPreferredSampleRate(preferredMotionSampleRate)
+        motionMonitor.setStreamingEnabled(shouldStreamMotion)
+    }
+
+    private func handleTabTransition(from previous: PopoverTab, to next: PopoverTab) {
+        if previous == .motion && next != .motion {
+            isGraphPlaying = false
+            return
+        }
+
+        if next == .motion {
+            // Motion graph always starts paused until user explicitly taps Play.
+            isGraphPlaying = false
+        }
     }
 
     private func loadGestureSettings() {
