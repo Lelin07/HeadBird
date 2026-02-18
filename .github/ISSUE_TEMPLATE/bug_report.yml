@@ -1,0 +1,79 @@
+name: Bug report
+description: Report a bug or regression in HeadBird.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is the bug?
+      placeholder: "Short description of the issue."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Launch HeadBird
+        2. Connect AirPods
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      placeholder: "What should happen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+      placeholder: "What happens instead?"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, Mac model/chip, AirPods model, optional Xcode version.
+      placeholder: "macOS 14.x, MacBook Pro M3, AirPods Pro 2, Xcode 15.x"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area (optional)
+      options:
+        - services
+        - ui
+        - app
+        - models
+        - game
+        - tests
+        - build
+        - ci
+        - docs
+        - assets
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      render: shell
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context (optional)
