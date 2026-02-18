@@ -1,32 +1,32 @@
 bug:
-  - '(?i)\bbug\b'
-  - '(?i)\bcrash(es|ed|ing)?\b'
-  - '(?i)\berror(s)?\b'
-  - '(?i)\bfail(s|ed|ing|ure)?\b'
+  - '\b[Bb][Uu][Gg]\b'
+  - '\b[Cc][Rr][Aa][Ss][Hh](es|ed|ing)?\b'
+  - '\b[Ee][Rr][Rr][Oo][Rr](s)?\b'
+  - '\b[Ff][Aa][Ii][Ll](s|ed|ing|ure)?\b'
 
 enhancement:
-  - '(?i)\bfeature request\b'
-  - '(?i)\benhancement\b'
-  - '(?i)\bimprove(ment)?\b'
-  - '(?i)\bwould like\b'
+  - '\b[Ff][Ee][Aa][Tt][Uu][Rr][Ee] [Rr][Ee][Qq][Uu][Ee][Ss][Tt]\b'
+  - '\b[Ee][Nn][Hh][Aa][Nn][Cc][Ee][Mm][Ee][Nn][Tt]\b'
+  - '\b[Ii][Mm][Pp][Rr][Oo][Vv][Ee](ment)?\b'
+  - '\b[Ww][Oo][Uu][Ll][Dd] [Ll][Ii][Kk][Ee]\b'
 
 question:
-  - '(?i)\bquestion\b'
-  - '(?i)\bhow to\b'
-  - '(?i)\bhelp\b'
+  - '\b[Qq][Uu][Ee][Ss][Tt][Ii][Oo][Nn]\b'
+  - '\b[Hh][Oo][Ww] [Tt][Oo]\b'
+  - '\b[Hh][Ee][Ll][Pp]\b'
 
 documentation:
-  - '(?i)\bdocs?\b'
-  - '(?i)\breadme\b'
-  - '(?i)\bdocumentation\b'
+  - '\b[Dd][Oo][Cc][Ss]?\b'
+  - '\b[Rr][Ee][Aa][Dd][Mm][Ee]\b'
+  - '\b[Dd][Oo][Cc][Uu][Mm][Ee][Nn][Tt][Aa][Tt][Ii][Oo][Nn]\b'
 
 tests:
-  - '(?i)\btest(s|ing)?\b'
-  - '(?i)\bcoverage\b'
-  - '(?i)\bxctest\b'
+  - '\b[Tt][Ee][Ss][Tt](s|ing)?\b'
+  - '\b[Cc][Oo][Vv][Ee][Rr][Aa][Gg][Ee]\b'
+  - '\b[Xx][Cc][Tt][Ee][Ss][Tt]\b'
 
 ci:
-  - '(?i)\bci\b'
-  - '(?i)\bgithub actions?\b'
-  - '(?i)\bworkflow(s)?\b'
-  - '(?i)\bpipeline(s)?\b'
+  - '\b[Cc][Ii]\b'
+  - '\b[Gg][Ii][Tt][Hh][Uu][Bb] [Aa][Cc][Tt][Ii][Oo][Nn][Ss]?\b'
+  - '\b[Ww][Oo][Rr][Kk][Ff][Ll][Oo][Ww](s)?\b'
+  - '\b[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee](s)?\b'
