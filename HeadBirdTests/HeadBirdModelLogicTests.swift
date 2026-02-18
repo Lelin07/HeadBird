@@ -157,4 +157,168 @@ final class HeadBirdModelLogicTests: XCTestCase {
             "Active"
         )
     }
+
+    func testShouldStreamMotionDemandRules() {
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: false,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .motion,
+                isGraphPlaying: true,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .denied,
+                isPopoverVisible: true,
+                activeTab: .motion,
+                isGraphPlaying: true,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .motion,
+                isGraphPlaying: true,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: false,
+                activeTab: .motion,
+                isGraphPlaying: true,
+                gestureControlEnabled: true,
+                isCalibrationCapturing: true
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .motion,
+                isGraphPlaying: false,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGraphPlaying: true,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGraphPlaying: false,
+                gestureControlEnabled: true,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGraphPlaying: false,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: true
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .game,
+                isGraphPlaying: false,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: false,
+                activeTab: .game,
+                isGraphPlaying: false,
+                gestureControlEnabled: false,
+                isCalibrationCapturing: false
+            )
+        )
+    }
+
+    func testShouldPublishVisualMotionUpdatesRules() {
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldPublishVisualMotionUpdates(
+                isPopoverVisible: true,
+                activeTab: .motion,
+                isGraphPlaying: true
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldPublishVisualMotionUpdates(
+                isPopoverVisible: true,
+                activeTab: .motion,
+                isGraphPlaying: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldPublishVisualMotionUpdates(
+                isPopoverVisible: true,
+                activeTab: .game,
+                isGraphPlaying: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldPublishVisualMotionUpdates(
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGraphPlaying: true
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldPublishVisualMotionUpdates(
+                isPopoverVisible: false,
+                activeTab: .motion,
+                isGraphPlaying: true
+            )
+        )
+    }
 }
