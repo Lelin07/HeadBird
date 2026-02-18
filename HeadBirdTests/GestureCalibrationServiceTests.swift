@@ -92,6 +92,7 @@ final class GestureCalibrationServiceTests: XCTestCase {
             pitch: pitch,
             roll: 0,
             yaw: yaw,
+            sensorLocation: .default,
             rotationRate: CMRotationRate(x: 0, y: 0, z: 0),
             gravity: CMAcceleration(x: 0, y: -1, z: 0),
             userAcceleration: CMAcceleration(x: 0, y: 0, z: 0),
