@@ -1,0 +1,21 @@
+<svg width="640" height="360" viewBox="0 0 640 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="20" y1="20" x2="620" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9FFF2"/>
+      <stop offset="1" stop-color="#EAF1FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="638" height="358" rx="18" fill="url(#bg2)" stroke="#CEE6DB"/>
+  <rect x="60" y="50" width="520" height="260" rx="18" fill="white" stroke="#D4E7DB"/>
+  <circle cx="320" cy="170" r="86" fill="#F7FBFF" stroke="#BFD3E9" stroke-width="8"/>
+  <circle cx="320" cy="170" r="46" fill="#EAF4FF" stroke="#95B7DE" stroke-width="6"/>
+  <path d="M320 84V62" stroke="#5A7FAE" stroke-width="6" stroke-linecap="round"/>
+  <path d="M406 170H428" stroke="#5A7FAE" stroke-width="6" stroke-linecap="round"/>
+  <path d="M320 256V278" stroke="#5A7FAE" stroke-width="6" stroke-linecap="round"/>
+  <path d="M234 170H212" stroke="#5A7FAE" stroke-width="6" stroke-linecap="round"/>
+  <path d="M320 170L367 134" stroke="#007AFF" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="320" cy="170" r="12" fill="#007AFF"/>
+  <rect x="245" y="256" width="150" height="34" rx="17" fill="#34C759"/>
+  <text x="282" y="278" fill="white" font-family="Arial, sans-serif" font-size="16" font-weight="700">Calibrate</text>
+  <text x="92" y="92" fill="#375170" font-family="Arial, sans-serif" font-size="17" font-weight="700">One-click orientation reset</text>
+</svg>
