@@ -14,6 +14,7 @@ final class GestureCalibrationService: ObservableObject {
     @Published private(set) var isUsingFallbackProfile: Bool = true
 
     private let profileKey: String
+    private let legacyProfileKey: String?
     private let defaults: UserDefaults
     private let captureDuration: TimeInterval
     private var captureStartedAt: TimeInterval?
@@ -24,12 +25,17 @@ final class GestureCalibrationService: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
-        profileKey: String = "HeadBird.GestureThresholdProfile.v1",
+        profileKey: String = "HeadBird.GestureThresholdProfile.v2",
+        legacyProfileKey: String? = "HeadBird.GestureThresholdProfile.v1",
         captureDuration: TimeInterval = 2.2
     ) {
         self.defaults = defaults
         self.profileKey = profileKey
+        self.legacyProfileKey = legacyProfileKey
         self.captureDuration = captureDuration
+        if let legacyProfileKey {
+            defaults.removeObject(forKey: legacyProfileKey)
+        }
         loadPersistedProfile()
     }
 
@@ -43,7 +49,7 @@ final class GestureCalibrationService: ObservableObject {
             stage: .neutral,
             isCapturing: false,
             progress: 0,
-            message: "Neutral stage ready. Keep your head still, then start capture.",
+            message: "Step 1 of 3: capture neutral. Keep your head still, then press Capture.",
             hasProfile: false
         )
     }
@@ -60,13 +66,13 @@ final class GestureCalibrationService: ObservableObject {
         switch state.stage {
         case .neutral:
             neutralSamples.removeAll(keepingCapacity: true)
-            state.message = "Capturing neutral pose... keep your head still."
+            state.message = "Capturing neutral pose... stay still."
         case .nod:
             nodSamples.removeAll(keepingCapacity: true)
-            state.message = "Capture nod: do 2-3 deliberate nods now."
+            state.message = "Capturing nod stage... do 2-3 deliberate nods."
         case .shake:
             shakeSamples.removeAll(keepingCapacity: true)
-            state.message = "Capture shake: do 2-3 deliberate shakes now."
+            state.message = "Capturing shake stage... do 2-3 deliberate shakes."
         case .notStarted, .completed:
             break
         }
@@ -116,6 +122,9 @@ final class GestureCalibrationService: ObservableObject {
 
     func clearCalibrationProfile() {
         defaults.removeObject(forKey: profileKey)
+        if let legacyProfileKey {
+            defaults.removeObject(forKey: legacyProfileKey)
+        }
         profile = .fallback
         isUsingFallbackProfile = true
         state = .initial
@@ -130,20 +139,20 @@ final class GestureCalibrationService: ObservableObject {
         case .neutral:
             state.stage = .nod
             state.progress = 0
-            state.message = "Neutral captured. Next: nod stage."
+            state.message = "Step 2 of 3: neutral saved. Capture nod next."
         case .nod:
             state.stage = .shake
             state.progress = 0
-            state.message = "Nod captured. Next: shake stage."
+            state.message = "Step 3 of 3: nod saved. Capture shake next."
         case .shake:
             let computed = computeProfile(neutral: neutralSamples, nod: nodSamples, shake: shakeSamples)
             profile = computed
-            isUsingFallbackProfile = false
+            isUsingFallbackProfile = computed == .fallback
             state = GestureCalibrationState(
                 stage: .completed,
                 isCapturing: false,
                 progress: 1,
-                message: "Calibration complete.",
+                message: computed == .fallback ? "Calibration finished with fallback thresholds." : "Calibration complete.",
                 hasProfile: true
             )
             persist(profile: computed)
@@ -164,13 +173,17 @@ final class GestureCalibrationService: ObservableObject {
             return
         }
 
-        profile = decoded
-        isUsingFallbackProfile = decoded == .fallback
+        let sanitized = sanitizeProfile(decoded)
+        profile = sanitized
+        isUsingFallbackProfile = sanitized == .fallback
+        if sanitized != decoded {
+            persist(profile: sanitized)
+        }
         state = GestureCalibrationState(
             stage: .completed,
             isCapturing: false,
             progress: 1,
-            message: "Calibration profile loaded.",
+            message: sanitized == decoded ? "Calibration profile loaded." : "Calibration profile loaded and optimized.",
             hasProfile: true
         )
     }
@@ -189,29 +202,44 @@ final class GestureCalibrationService: ObservableObject {
             return .fallback
         }
 
-        let baselinePitch = mean(neutral.map(\.pitch))
-        let baselineYaw = mean(neutral.map(\.yaw))
+        let baselinePitch = percentile(neutral.map(\.pitch), quantile: 0.5)
+        let baselineYaw = percentile(neutral.map(\.yaw), quantile: 0.5)
 
-        let neutralPitchNoise = standardDeviation(neutral.map { $0.pitch - baselinePitch })
-        let neutralYawNoise = standardDeviation(neutral.map { $0.yaw - baselineYaw })
+        let neutralPitchAbsDeviation = neutral.map { abs($0.pitch - baselinePitch) }
+        let neutralYawAbsDeviation = neutral.map { abs($0.yaw - baselineYaw) }
+        let neutralPitchNoise = percentile(neutralPitchAbsDeviation, quantile: 0.95)
+        let neutralYawNoise = percentile(neutralYawAbsDeviation, quantile: 0.95)
 
         let nodPitchSeries = nod.map { $0.pitch - baselinePitch }
+        let nodYawSeries = nod.map { $0.yaw - baselineYaw }
+        let shakePitchSeries = shake.map { $0.pitch - baselinePitch }
         let shakeYawSeries = shake.map { $0.yaw - baselineYaw }
 
-        let nodAmplitude = maxAbs(nodPitchSeries)
-        let shakeAmplitude = maxAbs(shakeYawSeries)
+        let nodPitchVelocity = velocities(from: nod.map { ($0.timestamp, $0.pitch - baselinePitch) })
+        let shakeYawVelocity = velocities(from: shake.map { ($0.timestamp, $0.yaw - baselineYaw) })
+        let nodCrossings = zeroCrossings(values: nodPitchVelocity, floor: 0.18)
+        let shakeCrossings = zeroCrossings(values: shakeYawVelocity, floor: 0.20)
 
-        let nodVelocity = maxAbs(velocities(from: nod.map { ($0.timestamp, $0.pitch - baselinePitch) }))
-        let shakeVelocity = maxAbs(velocities(from: shake.map { ($0.timestamp, $0.yaw - baselineYaw) }))
+        let deadzone = max(0.02, max(neutralPitchNoise, neutralYawNoise) * 2.2)
 
-        let deadzone = max(0.02, max(neutralPitchNoise, neutralYawNoise) * 2.6)
+        let nodAmplitudeP90 = percentile(nodPitchSeries.map { abs($0) }, quantile: 0.90)
+        let nodVelocityP90 = percentile(nodPitchVelocity.map { abs($0) }, quantile: 0.90)
+        let shakeAmplitudeP90 = percentile(shakeYawSeries.map { abs($0) }, quantile: 0.90)
+        let shakeVelocityP90 = percentile(shakeYawVelocity.map { abs($0) }, quantile: 0.90)
 
-        let nodAmplitudeThreshold = max(deadzone * 2.0, nodAmplitude * 0.42, 0.09)
-        let nodVelocityThreshold = max(0.45, nodVelocity * 0.38)
-        let shakeAmplitudeThreshold = max(deadzone * 2.4, shakeAmplitude * 0.42, 0.12)
-        let shakeVelocityThreshold = max(0.6, shakeVelocity * 0.38)
+        let nodAmplitudeThreshold = clamp(max(deadzone * 2.0, nodAmplitudeP90 * 0.42, 0.09), min: 0.08, max: 0.24)
+        let nodVelocityThreshold = clamp(max(0.38, nodVelocityP90 * 0.40), min: 0.38, max: 0.92)
+        let shakeAmplitudeThreshold = clamp(max(deadzone * 2.2, shakeAmplitudeP90 * 0.44, 0.12), min: 0.10, max: 0.30)
+        let shakeVelocityThreshold = clamp(max(0.50, shakeVelocityP90 * 0.40), min: 0.50, max: 1.10)
 
-        return GestureThresholdProfile(
+        let nodCrossLeakage = percentile(nodYawSeries.map { abs($0) }, quantile: 0.90) / max(0.000_1, nodAmplitudeP90)
+        let shakeCrossLeakage = percentile(shakePitchSeries.map { abs($0) }, quantile: 0.90) / max(0.000_1, shakeAmplitudeP90)
+        let nodCrossAxisLeakageMax = clamp(nodCrossLeakage * 1.40, min: 0.80, max: 1.20)
+        let shakeCrossAxisLeakageMax = clamp(shakeCrossLeakage * 1.40, min: 0.80, max: 1.20)
+        let nodMinCrossings = max(1, min(2, nodCrossings))
+        let shakeMinCrossings = max(1, min(3, shakeCrossings))
+
+        let computed = GestureThresholdProfile(
             version: GestureThresholdProfile.currentVersion,
             baselinePitch: baselinePitch,
             baselineYaw: baselineYaw,
@@ -220,9 +248,15 @@ final class GestureCalibrationService: ObservableObject {
             nodVelocityThreshold: nodVelocityThreshold,
             shakeAmplitudeThreshold: shakeAmplitudeThreshold,
             shakeVelocityThreshold: shakeVelocityThreshold,
-            minConfidence: 0.55,
-            cooldownSeconds: 0.9
+            nodCrossAxisLeakageMax: nodCrossAxisLeakageMax,
+            shakeCrossAxisLeakageMax: shakeCrossAxisLeakageMax,
+            nodMinCrossings: nodMinCrossings,
+            shakeMinCrossings: shakeMinCrossings,
+            diagnosticSmoothing: 0.30,
+            minConfidence: 0.50,
+            cooldownSeconds: 0.80
         )
+        return sanitizeProfile(computed)
     }
 
     private func velocities(from samples: [(timestamp: TimeInterval, value: Double)]) -> [Double] {
@@ -233,29 +267,79 @@ final class GestureCalibrationService: ObservableObject {
         for index in 1..<samples.count {
             let prev = samples[index - 1]
             let next = samples[index]
-            let dt = max(0.000_1, next.timestamp - prev.timestamp)
+            let dt = max(1.0 / 120.0, next.timestamp - prev.timestamp)
             values.append((next.value - prev.value) / dt)
         }
 
         return values
     }
 
-    private func mean(_ values: [Double]) -> Double {
+    private func sanitizeProfile(_ profile: GestureThresholdProfile) -> GestureThresholdProfile {
+        if profile == .fallback {
+            return .fallback
+        }
+
+        return GestureThresholdProfile(
+            version: GestureThresholdProfile.currentVersion,
+            baselinePitch: profile.baselinePitch,
+            baselineYaw: profile.baselineYaw,
+            neutralDeadzone: clamp(profile.neutralDeadzone, min: 0.015, max: 0.09),
+            nodAmplitudeThreshold: clamp(profile.nodAmplitudeThreshold, min: 0.08, max: 0.24),
+            nodVelocityThreshold: clamp(profile.nodVelocityThreshold, min: 0.38, max: 0.92),
+            shakeAmplitudeThreshold: clamp(profile.shakeAmplitudeThreshold, min: 0.10, max: 0.30),
+            shakeVelocityThreshold: clamp(profile.shakeVelocityThreshold, min: 0.50, max: 1.10),
+            nodCrossAxisLeakageMax: clamp(profile.nodCrossAxisLeakageMax, min: 0.80, max: 1.20),
+            shakeCrossAxisLeakageMax: clamp(profile.shakeCrossAxisLeakageMax, min: 0.80, max: 1.20),
+            nodMinCrossings: max(1, min(2, profile.nodMinCrossings)),
+            shakeMinCrossings: max(1, min(3, profile.shakeMinCrossings)),
+            diagnosticSmoothing: clamp(profile.diagnosticSmoothing, min: 0.22, max: 0.36),
+            minConfidence: clamp(profile.minConfidence, min: 0.45, max: 0.60),
+            cooldownSeconds: clamp(profile.cooldownSeconds, min: 0.70, max: 1.00)
+        )
+    }
+
+    private func percentile(_ values: [Double], quantile: Double) -> Double {
         guard !values.isEmpty else { return 0 }
-        return values.reduce(0, +) / Double(values.count)
+        let q = max(0, min(1, quantile))
+        let sorted = values.sorted()
+        if sorted.count == 1 {
+            return sorted[0]
+        }
+        let position = q * Double(sorted.count - 1)
+        let lowerIndex = Int(position.rounded(.down))
+        let upperIndex = Int(position.rounded(.up))
+        if lowerIndex == upperIndex {
+            return sorted[lowerIndex]
+        }
+        let interpolation = position - Double(lowerIndex)
+        return sorted[lowerIndex] + (sorted[upperIndex] - sorted[lowerIndex]) * interpolation
     }
 
-    private func standardDeviation(_ values: [Double]) -> Double {
-        guard values.count > 1 else { return 0 }
-        let avg = mean(values)
-        let variance = values.reduce(0) { partial, value in
-            let delta = value - avg
-            return partial + (delta * delta)
-        } / Double(values.count)
-        return sqrt(variance)
+    private func zeroCrossings(values: [Double], floor: Double) -> Int {
+        guard values.count >= 2 else { return 0 }
+        var count = 0
+        var previousSign = sign(of: values[0], floor: floor)
+        for value in values.dropFirst() {
+            let sign = sign(of: value, floor: floor)
+            if sign == 0 {
+                continue
+            }
+            if previousSign != 0, sign != previousSign {
+                count += 1
+            }
+            previousSign = sign
+        }
+        return count
     }
 
-    private func maxAbs(_ values: [Double]) -> Double {
-        values.reduce(0) { max($0, abs($1)) }
+    private func sign(of value: Double, floor: Double) -> Int {
+        if abs(value) < floor {
+            return 0
+        }
+        return value > 0 ? 1 : -1
+    }
+
+    private func clamp(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
+        Swift.max(minValue, Swift.min(maxValue, value))
     }
 }
