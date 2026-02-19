@@ -47,6 +47,10 @@ final class PongGameScene: SKScene {
         ball.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
     }
 
+    func prepareForResume() {
+        lastUpdateTime = 0
+    }
+
     func startRound(towardRight: Bool) {
         ball.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
         launchBall(towardRight: towardRight)
