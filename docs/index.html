@@ -11,67 +11,87 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap"
     rel="stylesheet"
   />
   <link rel="stylesheet" href="./styles.css" />
+  <script src="./site.js" defer></script>
 </head>
 <body>
-  <div class="page-bg" aria-hidden="true"></div>
-  <main class="container">
+  <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode">
+    <span id="themeIcon" class="theme-icon" aria-hidden="true">☾</span>
+  </button>
+
+  <div class="page-backdrop" aria-hidden="true"></div>
+
+  <main class="page">
     <header class="hero">
-      <img src="./assets/headbird-icon-squircle.png" alt="HeadBird app icon" class="app-icon" />
-      <p class="kicker">Native macOS Menu Bar App</p>
+      <img src="./assets/headbird-icon-squircle.png" alt="HeadBird logo" class="hero-logo" />
+      <p class="eyebrow">Native macOS menu bar app</p>
       <h1>HeadBird</h1>
       <p class="subtitle">
-        Read AirPods head-tracking signals in real time and visualize Roll, Pitch, and Yaw
-        with calibration and a tilt-controlled mini game.
+        Read AirPods head-tracking signals in real time and visualize Roll, Pitch, and Yaw with
+        calibration and a tilt-controlled mini game.
       </p>
+
+      <div class="release-pill" aria-live="polite">
+        <span id="releaseLabel" class="release-label">Loading release metadata...</span>
+        <a id="releaseLink" href="https://github.com/Lelin07/HeadBird/releases" class="release-link">Open release notes</a>
+      </div>
+
       <div class="hero-actions">
         <a class="btn btn-primary" href="https://github.com/Lelin07/HeadBird/releases">Download from Releases</a>
         <a class="btn btn-secondary" href="https://github.com/Lelin07/HeadBird#build-from-source-xcode">Build from Source</a>
       </div>
     </header>
 
-    <section class="section">
-      <h2>What You Get</h2>
+    <section class="panel" aria-labelledby="features-title">
+      <div class="panel-head">
+        <h2 id="features-title">Feature Highlights</h2>
+      </div>
+
       <div class="feature-grid">
-        <article class="card">
+        <article class="feature-card">
+          <div class="feature-media">
+            <img src="./assets/features/motion-visuals.png" alt="Motion visuals preview" class="feature-image" />
+          </div>
           <h3>Motion Visuals</h3>
           <p>Live Roll, Pitch, and Yaw telemetry with an easy-to-read history graph.</p>
         </article>
-        <article class="card">
-          <h3>One-Click Calibration</h3>
-          <p>Zero your current head orientation instantly for stable interaction.</p>
-        </article>
-        <article class="card">
-          <h3>Head-Controlled Mini Game</h3>
+
+        <article class="feature-card">
+          <div class="feature-media">
+            <img src="./assets/features/flappy-game.png" alt="Flappy game preview" class="feature-image" />
+          </div>
+          <h3>Head-Controlled Flappy Game</h3>
           <p>Tilt your head up and down to play directly from the menu bar app.</p>
         </article>
       </div>
     </section>
 
-    <section class="section">
-      <h2>Install in Minutes</h2>
-      <ol class="steps">
-        <li>Open the latest release and download the HeadBird DMG.</li>
-        <li>Mount the DMG and drag <code>HeadBird.app</code> to <code>Applications</code>.</li>
-        <li>Launch HeadBird and grant Bluetooth + Motion permissions when prompted.</li>
-      </ol>
-      <p class="note">
-        If macOS blocks first launch as an unverified developer app, use the Finder
-        right-click <strong>Open</strong> flow. Full troubleshooting is in the
-        <a href="https://github.com/Lelin07/HeadBird#if-macos-shows-malware--unverified-developer-warning">README</a>.
-      </p>
-    </section>
+    <section class="info-grid">
+      <article class="panel">
+        <h2>Install in Minutes</h2>
+        <ol class="steps">
+          <li>Open the latest release and download the HeadBird DMG.</li>
+          <li>Mount the DMG and drag <code>HeadBird.app</code> to <code>Applications</code>.</li>
+          <li>Launch HeadBird and grant Bluetooth + Motion permissions when prompted.</li>
+        </ol>
+        <p class="note">
+          If macOS blocks first launch as an unverified developer app, use Finder right-click
+          <strong>Open</strong>. Full troubleshooting is in the
+          <a href="https://github.com/Lelin07/HeadBird#if-macos-shows-malware--unverified-developer-warning">README</a>.
+        </p>
+      </article>
 
-    <section class="section">
-      <h2>Privacy at a Glance</h2>
-      <ul class="privacy">
-        <li>No microphone recording.</li>
-        <li>No audio content processing.</li>
-        <li>Device state and motion are used locally for app features.</li>
-      </ul>
+      <article class="panel">
+        <h2>Privacy at a Glance</h2>
+        <ul class="privacy">
+          <li>No microphone recording.</li>
+          <li>No audio content processing.</li>
+          <li>Device state and motion are used locally for app features.</li>
+        </ul>
+      </article>
     </section>
   </main>
 
