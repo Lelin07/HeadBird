@@ -31,14 +31,34 @@ final class HeadBirdModel: ObservableObject {
 
     @Published var gestureControlEnabled: Bool = false {
         didSet {
+            if gestureControlEnabled && !gestureCalibrationState.hasProfile {
+                gestureControlEnabled = false
+                guard !isRestoringGestureSettings else { return }
+                setFeedback("Complete calibration or use fallback before enabling control mode.")
+                return
+            }
+            if !gestureControlEnabled {
+                pendingConfirmation = nil
+            }
             reevaluateMotionDemand()
             guard !isRestoringGestureSettings else { return }
             defaults.set(gestureControlEnabled, forKey: DefaultsKey.gestureControlEnabled)
         }
     }
+    @Published var gestureTesterEnabled: Bool = false {
+        didSet {
+            reevaluateMotionDemand()
+            if !gestureTesterEnabled && !canExecuteGestureActions {
+                clearGestureDiagnostics()
+            }
+        }
+    }
 
     @Published var lastGestureEvent: HeadGestureEvent? = nil
+    @Published private(set) var lastGestureActionResult: String? = nil
+    @Published private(set) var lastGestureActionTimestamp: Date? = nil
     @Published var gestureCalibrationState: GestureCalibrationState = .initial
+    @Published private(set) var gestureDiagnostics: GestureDiagnostics = .empty
 
     @Published var nodMappedAction: GestureMappedAction = .promptResponse {
         didSet {
@@ -108,10 +128,13 @@ final class HeadBirdModel: ObservableObject {
     private let gestureProcessingInterval: TimeInterval = 1.0 / 40.0
     private let deadzoneDegrees: Double = 1.5
     private let pendingConfirmationWindow: TimeInterval = 2.0
+    private let diagnosticsConfidenceDeltaThreshold: Double = 0.01
+    private let diagnosticsSampleRateDeltaThreshold: Double = 0.5
 
     private var lastMotionTimestamp: TimeInterval?
     private var lastHistoryTimestamp: TimeInterval?
     private var lastGestureProcessingTimestamp: TimeInterval?
+    private var lastGestureDiagnosticsTimestamp: TimeInterval?
     private var lastSampleSensorLocation: CMDeviceMotion.SensorLocation?
     private var previousCalibrationStage: GestureCalibrationStage
     private var isRestoringGestureSettings: Bool = false
@@ -136,9 +159,11 @@ final class HeadBirdModel: ObservableObject {
         self.calibrationService = calibrationService
         self.gestureDetector = HeadGestureDetector(profile: calibrationService.profile)
         self.promptActionExecutor = PromptActionExecutor()
+        let systemActionExecutor = SystemActionExecutor()
         self.actionRouter = GestureActionRouter(
             promptExecutor: promptActionExecutor,
-            shortcutExecutor: ShortcutActionExecutor()
+            shortcutExecutor: ShortcutActionExecutor(),
+            systemExecutor: systemActionExecutor
         )
         self.previousCalibrationStage = calibrationService.state.stage
 
@@ -205,6 +230,17 @@ final class HeadBirdModel: ObservableObject {
 
     var canUseGestureControls: Bool {
         motionStreaming && gestureCalibrationState.hasProfile
+    }
+
+    var canExecuteGestureActions: Bool {
+        HeadBirdModelLogic.shouldExecuteGestureActions(
+            gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: gestureCalibrationState.hasProfile
+        )
+    }
+
+    var isGestureTesterActive: Bool {
+        isGestureTesterEnabled && motionStreaming
     }
 
     var routeConfig: GestureActionRouteConfig {
@@ -435,6 +471,10 @@ final class HeadBirdModel: ObservableObject {
             .sink { [weak self] state in
                 guard let self else { return }
                 self.gestureCalibrationState = state
+                if !state.hasProfile {
+                    self.pendingConfirmation = nil
+                    self.gestureControlEnabled = false
+                }
 
                 if state.stage == .completed, self.previousCalibrationStage != .completed {
                     self.gestureControlEnabled = true
@@ -465,14 +505,19 @@ final class HeadBirdModel: ObservableObject {
     }
 
     private func processGesture(sample: HeadphoneMotionSample) {
-        guard gestureControlEnabled else { return }
-        guard canUseGestureControls else { return }
+        let detection = gestureDetector.ingest(sample: sample)
+        updateGestureDiagnostics(with: detection, timestamp: sample.timestamp)
 
-        guard let event = gestureDetector.ingest(sample: sample) else {
+        guard let event = detection.event else {
             return
         }
 
         lastGestureEvent = event
+
+        guard canExecuteGestureActions else {
+            pendingConfirmation = nil
+            return
+        }
 
         if doubleConfirmEnabled {
             if let pendingConfirmation,
@@ -499,13 +544,24 @@ final class HeadBirdModel: ObservableObject {
             }
         )
 
+        lastGestureActionResult = "\(event.gesture.title): \(result.message)"
+        lastGestureActionTimestamp = Date()
         setFeedback("\(event.gesture.title) \(Int(event.confidence * 100))%: \(result.message)")
         refreshGesturePermissions(promptForAccessibility: false)
     }
 
     private func shouldProcessGestureSample(timestamp: TimeInterval) -> Bool {
-        guard gestureControlEnabled, canUseGestureControls else {
+        let shouldAnalyze = HeadBirdModelLogic.shouldAnalyzeGestures(
+            motionStreaming: motionStreaming,
+            isGestureTesterActive: isGestureTesterActive,
+            gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: gestureCalibrationState.hasProfile
+        )
+        guard shouldAnalyze else {
             lastGestureProcessingTimestamp = nil
+            if !isGestureTesterActive {
+                clearGestureDiagnostics()
+            }
             return false
         }
         if let lastGestureProcessingTimestamp,
@@ -514,6 +570,72 @@ final class HeadBirdModel: ObservableObject {
         }
         lastGestureProcessingTimestamp = timestamp
         return true
+    }
+
+    private func updateGestureDiagnostics(with result: GestureDetectionResult, timestamp: TimeInterval) {
+        let sampleRateHertz: Double
+        if let lastGestureDiagnosticsTimestamp {
+            let dt = timestamp - lastGestureDiagnosticsTimestamp
+            if dt > 0 {
+                let instantaneousHertz = min(120, max(0, 1.0 / dt))
+                sampleRateHertz = gestureDiagnostics.sampleRateHertz == 0
+                    ? instantaneousHertz
+                    : (gestureDiagnostics.sampleRateHertz * 0.78) + (instantaneousHertz * 0.22)
+            } else {
+                sampleRateHertz = gestureDiagnostics.sampleRateHertz
+            }
+        } else {
+            sampleRateHertz = 0
+        }
+        lastGestureDiagnosticsTimestamp = timestamp
+        let diagnostics = GestureDiagnostics(
+            rawNodConfidence: result.rawNodConfidence,
+            rawShakeConfidence: result.rawShakeConfidence,
+            nodConfidence: result.nodConfidence,
+            shakeConfidence: result.shakeConfidence,
+            triggerThreshold: gestureDetector.profile.minConfidence,
+            sampleRateHertz: sampleRateHertz,
+            candidateGesture: result.candidateGesture,
+            lastUpdatedTimestamp: timestamp
+        )
+
+        if shouldPublishGestureDiagnostics(diagnostics, eventDetected: result.event != nil) {
+            gestureDiagnostics = diagnostics
+        }
+    }
+
+    private func shouldPublishGestureDiagnostics(_ next: GestureDiagnostics, eventDetected: Bool) -> Bool {
+        if eventDetected {
+            return true
+        }
+        let current = gestureDiagnostics
+        if current == .empty {
+            return next.sampleRateHertz > 0 || next.candidateGesture != nil
+        }
+        if abs(next.rawNodConfidence - current.rawNodConfidence) >= diagnosticsConfidenceDeltaThreshold {
+            return true
+        }
+        if abs(next.rawShakeConfidence - current.rawShakeConfidence) >= diagnosticsConfidenceDeltaThreshold {
+            return true
+        }
+        if abs(next.sampleRateHertz - current.sampleRateHertz) >= diagnosticsSampleRateDeltaThreshold {
+            return true
+        }
+        if next.candidateGesture != current.candidateGesture {
+            return true
+        }
+        if abs(next.triggerThreshold - current.triggerThreshold) >= 0.001 {
+            return true
+        }
+        return false
+    }
+
+    private func clearGestureDiagnostics() {
+        if gestureDiagnostics == .empty {
+            return
+        }
+        lastGestureDiagnosticsTimestamp = nil
+        gestureDiagnostics = .empty
     }
 
     private func startBluetoothPolling() {
@@ -623,8 +745,10 @@ final class HeadBirdModel: ObservableObject {
             motionAuthorization: motionAuthorization,
             isPopoverVisible: isPopoverVisible,
             activeTab: activePopoverTab,
+            isGestureTesterEnabled: isGestureTesterEnabled,
             isGraphPlaying: isGraphPlaying,
             gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: gestureCalibrationState.hasProfile,
             isCalibrationCapturing: gestureCalibrationState.isCapturing
         )
     }
@@ -637,14 +761,28 @@ final class HeadBirdModel: ObservableObject {
         )
     }
 
+    private var isGestureTesterVisible: Bool {
+        isPopoverVisible && activePopoverTab == .controls
+    }
+
+    private var isGestureTesterEnabled: Bool {
+        isGestureTesterVisible && gestureTesterEnabled
+    }
+
     private var preferredMotionSampleRate: Double {
         if shouldPublishVisualMotionUpdates {
             return 45
         }
+        if isGestureTesterEnabled {
+            return 30
+        }
         if gestureCalibrationState.isCapturing {
             return 40
         }
-        if gestureControlEnabled {
+        if gestureControlEnabled && gestureCalibrationState.hasProfile {
+            if !isPopoverVisible {
+                return 20
+            }
             return 30
         }
         return 20
@@ -696,6 +834,9 @@ final class HeadBirdModel: ObservableObject {
         gestureDetector.additionalCooldownSeconds = gestureCooldownSeconds
         gestureCalibrationState = calibrationService.state
         usesFallbackGestureProfile = calibrationService.isUsingFallbackProfile
+        if !gestureCalibrationState.hasProfile {
+            gestureControlEnabled = false
+        }
         isRestoringGestureSettings = false
     }
 
@@ -712,6 +853,9 @@ final class HeadBirdModel: ObservableObject {
         let defaultControlMode = defaults.bool(forKey: DefaultsKey.gestureControlEnabled)
         if gestureControlEnabled != defaultControlMode {
             gestureControlEnabled = defaultControlMode
+        }
+        if !gestureCalibrationState.hasProfile, gestureControlEnabled {
+            gestureControlEnabled = false
         }
 
         if let storedNodAction = defaults.string(forKey: DefaultsKey.nodMappedAction),

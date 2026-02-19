@@ -89,17 +89,48 @@ enum HeadBirdModelLogic {
         motionAuthorization: CMAuthorizationStatus,
         isPopoverVisible: Bool,
         activeTab: PopoverTab,
+        isGestureTesterEnabled: Bool,
         isGraphPlaying: Bool,
         gestureControlEnabled: Bool,
+        hasGestureProfile: Bool,
         isCalibrationCapturing: Bool
     ) -> Bool {
         guard hasAnyAirPodsConnection else { return false }
         guard motionAuthorization != .denied, motionAuthorization != .restricted else { return false }
+
+        if (gestureControlEnabled && hasGestureProfile) || isCalibrationCapturing {
+            return true
+        }
+
+        if isGestureTesterEnabled {
+            return true
+        }
+
         guard isPopoverVisible else { return false }
 
-        let needsMotionGraph = isPopoverVisible && activeTab == .motion && isGraphPlaying
-        let needsGame = isPopoverVisible && activeTab == .game
-        return needsMotionGraph || needsGame || gestureControlEnabled || isCalibrationCapturing
+        let needsMotionGraph = activeTab == .motion && isGraphPlaying
+        let needsGame = activeTab == .game
+        return needsMotionGraph || needsGame
+    }
+
+    static func shouldAnalyzeGestures(
+        motionStreaming: Bool,
+        isGestureTesterActive: Bool,
+        gestureControlEnabled: Bool,
+        hasGestureProfile: Bool
+    ) -> Bool {
+        guard motionStreaming else { return false }
+        return isGestureTesterActive || shouldExecuteGestureActions(
+            gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: hasGestureProfile
+        )
+    }
+
+    static func shouldExecuteGestureActions(
+        gestureControlEnabled: Bool,
+        hasGestureProfile: Bool
+    ) -> Bool {
+        gestureControlEnabled && hasGestureProfile
     }
 
     static func shouldPublishVisualMotionUpdates(

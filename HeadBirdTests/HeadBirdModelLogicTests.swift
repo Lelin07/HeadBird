@@ -165,8 +165,10 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .authorized,
                 isPopoverVisible: true,
                 activeTab: .motion,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: true,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: false
             )
         )
@@ -177,8 +179,10 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .denied,
                 isPopoverVisible: true,
                 activeTab: .motion,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: true,
                 gestureControlEnabled: false,
+                hasGestureProfile: true,
                 isCalibrationCapturing: false
             )
         )
@@ -189,21 +193,25 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .authorized,
                 isPopoverVisible: true,
                 activeTab: .motion,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: true,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: false
             )
         )
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             HeadBirdModelLogic.shouldStreamMotion(
                 hasAnyAirPodsConnection: true,
                 motionAuthorization: .authorized,
                 isPopoverVisible: false,
                 activeTab: .motion,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: true,
                 gestureControlEnabled: true,
-                isCalibrationCapturing: true
+                hasGestureProfile: true,
+                isCalibrationCapturing: false
             )
         )
 
@@ -213,8 +221,10 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .authorized,
                 isPopoverVisible: true,
                 activeTab: .motion,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: false,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: false
             )
         )
@@ -225,32 +235,52 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .authorized,
                 isPopoverVisible: true,
                 activeTab: .controls,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: true,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: false
             )
         )
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             HeadBirdModelLogic.shouldStreamMotion(
                 hasAnyAirPodsConnection: true,
                 motionAuthorization: .authorized,
                 isPopoverVisible: true,
                 activeTab: .controls,
-                isGraphPlaying: false,
-                gestureControlEnabled: true,
-                isCalibrationCapturing: false
-            )
-        )
-
-        XCTAssertTrue(
-            HeadBirdModelLogic.shouldStreamMotion(
-                hasAnyAirPodsConnection: true,
-                motionAuthorization: .authorized,
-                isPopoverVisible: true,
-                activeTab: .controls,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: false,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGestureTesterEnabled: false,
+                isGraphPlaying: false,
+                gestureControlEnabled: true,
+                hasGestureProfile: true,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGestureTesterEnabled: false,
+                isGraphPlaying: false,
+                gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: true
             )
         )
@@ -261,8 +291,10 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .authorized,
                 isPopoverVisible: true,
                 activeTab: .game,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: false,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: false
             )
         )
@@ -273,8 +305,38 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 motionAuthorization: .authorized,
                 isPopoverVisible: false,
                 activeTab: .game,
+                isGestureTesterEnabled: false,
                 isGraphPlaying: false,
                 gestureControlEnabled: false,
+                hasGestureProfile: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: false,
+                activeTab: .controls,
+                isGestureTesterEnabled: false,
+                isGraphPlaying: false,
+                gestureControlEnabled: true,
+                hasGestureProfile: false,
+                isCalibrationCapturing: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldStreamMotion(
+                hasAnyAirPodsConnection: true,
+                motionAuthorization: .authorized,
+                isPopoverVisible: true,
+                activeTab: .controls,
+                isGestureTesterEnabled: true,
+                isGraphPlaying: false,
+                gestureControlEnabled: false,
+                hasGestureProfile: false,
                 isCalibrationCapturing: false
             )
         )
@@ -318,6 +380,40 @@ final class HeadBirdModelLogicTests: XCTestCase {
                 isPopoverVisible: false,
                 activeTab: .motion,
                 isGraphPlaying: true
+            )
+        )
+    }
+
+    func testGestureAnalysisAndExecutionPolicies() {
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldAnalyzeGestures(
+                motionStreaming: true,
+                isGestureTesterActive: true,
+                gestureControlEnabled: false,
+                hasGestureProfile: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldAnalyzeGestures(
+                motionStreaming: false,
+                isGestureTesterActive: true,
+                gestureControlEnabled: false,
+                hasGestureProfile: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldExecuteGestureActions(
+                gestureControlEnabled: true,
+                hasGestureProfile: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldExecuteGestureActions(
+                gestureControlEnabled: true,
+                hasGestureProfile: true
             )
         )
     }
