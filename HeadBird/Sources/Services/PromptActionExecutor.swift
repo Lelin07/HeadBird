@@ -68,12 +68,19 @@ final class PromptActionExecutor {
             }
         }()
 
-        guard let targetButton = copyElementAttribute(from: focusedWindow, attribute: targetAttribute) else {
-            return false
+        if let targetButton = copyElementAttribute(from: focusedWindow, attribute: targetAttribute) {
+            let status = AXUIElementPerformAction(targetButton, kAXPressAction as CFString)
+            if status == .success {
+                return true
+            }
         }
 
-        let status = AXUIElementPerformAction(targetButton, kAXPressAction as CFString)
-        return status == .success
+        if let fallbackButton = buttonCandidate(in: focusedWindow, decision: decision) {
+            let status = AXUIElementPerformAction(fallbackButton, kAXPressAction as CFString)
+            return status == .success
+        }
+
+        return false
     }
 
     private func focusedWindowElement() -> AXUIElement? {
@@ -89,11 +96,87 @@ final class PromptActionExecutor {
     }
 
     private func copyElementAttribute(from element: AXUIElement, attribute: CFString) -> AXUIElement? {
+        guard let value = copyAttributeValue(from: element, attribute: attribute) else { return nil }
+        guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return unsafeDowncast(value, to: AXUIElement.self)
+    }
+
+    private func copyAttributeValue(from element: AXUIElement, attribute: CFString) -> CFTypeRef? {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(element, attribute, &value)
         guard status == .success else { return nil }
-        guard let value else { return nil }
-        return (value as! AXUIElement)
+        return value
+    }
+
+    private func copyElementArrayAttribute(from element: AXUIElement, attribute: CFString) -> [AXUIElement] {
+        guard let value = copyAttributeValue(from: element, attribute: attribute) else { return [] }
+        return value as? [AXUIElement] ?? []
+    }
+
+    private func copyStringAttribute(from element: AXUIElement, attribute: CFString) -> String? {
+        guard let value = copyAttributeValue(from: element, attribute: attribute) else { return nil }
+        return value as? String
+    }
+
+    private func buttonCandidate(in window: AXUIElement, decision: PromptDecision) -> AXUIElement? {
+        let buttons = collectButtons(from: window, depth: 0, maxDepth: 6)
+        guard !buttons.isEmpty else { return nil }
+
+        let rejectTokens = [
+            "cancel",
+            "stay",
+            "dont",
+            "don't",
+            "no",
+            "close",
+            "deny",
+            "not now"
+        ]
+        let acceptTokens = [
+            "ok",
+            "yes",
+            "allow",
+            "continue",
+            "open",
+            "leave",
+            "empty",
+            "erase",
+            "delete",
+            "remove",
+            "replace"
+        ]
+
+        let tokens = decision == .reject ? rejectTokens : acceptTokens
+        if let matched = buttons.first(where: { button in
+            let title = normalizedButtonTitle(button)
+            return tokens.contains(where: { title.contains($0) })
+        }) {
+            return matched
+        }
+
+        if decision == .accept {
+            return buttons.last
+        }
+        return buttons.first
+    }
+
+    private func collectButtons(from element: AXUIElement, depth: Int, maxDepth: Int) -> [AXUIElement] {
+        guard depth <= maxDepth else { return [] }
+
+        let role = copyStringAttribute(from: element, attribute: kAXRoleAttribute as CFString) ?? ""
+        var buttons: [AXUIElement] = role == (kAXButtonRole as String) ? [element] : []
+
+        let children = copyElementArrayAttribute(from: element, attribute: kAXChildrenAttribute as CFString)
+        for child in children {
+            buttons.append(contentsOf: collectButtons(from: child, depth: depth + 1, maxDepth: maxDepth))
+        }
+
+        return buttons
+    }
+
+    private func normalizedButtonTitle(_ element: AXUIElement) -> String {
+        let title = copyStringAttribute(from: element, attribute: kAXTitleAttribute as CFString) ?? ""
+        return title.lowercased()
     }
 
     private func fallbackByPostingKey(decision: PromptDecision) -> Bool {
