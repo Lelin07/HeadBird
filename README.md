@@ -27,6 +27,13 @@
 
 - Live site: https://lelin07.github.io/HeadBird/
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/assets/features/motion-visuals.png" alt="HeadBird motion visuals screen" width="48%" />
+  <img src="docs/assets/features/flappy-game.png" alt="HeadBird flappy game screen" width="48%" />
+</p>
+
 ## Features
 
 - Real-time Roll, Pitch, and Yaw visualization.
