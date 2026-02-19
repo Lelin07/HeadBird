@@ -1,0 +1,16 @@
+<svg width="640" height="360" viewBox="0 0 640 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg1" x1="40" y1="40" x2="600" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E5F3FF"/>
+      <stop offset="1" stop-color="#FFF2DE"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="638" height="358" rx="18" fill="url(#bg1)" stroke="#D2E1F3"/>
+  <rect x="40" y="60" width="560" height="240" rx="14" fill="white" stroke="#D8E3F2"/>
+  <line x1="70" y1="260" x2="570" y2="260" stroke="#C5D4E8" stroke-width="2"/>
+  <line x1="70" y1="100" x2="70" y2="260" stroke="#C5D4E8" stroke-width="2"/>
+  <path d="M70 230C95 210 120 190 145 195C170 200 195 250 220 240C245 230 270 170 295 160C320 150 345 180 370 175C395 170 420 140 445 135C470 130 495 145 520 120C535 105 552 95 570 95" stroke="#007AFF" stroke-width="5" stroke-linecap="round"/>
+  <path d="M70 210C100 205 130 195 160 202C190 209 220 228 250 215C280 202 310 165 340 166C370 167 400 190 430 180C460 170 490 145 520 148C537 150 553 152 570 146" stroke="#34C759" stroke-width="4" stroke-linecap="round"/>
+  <path d="M70 240C100 240 130 232 160 238C190 244 220 270 250 258C280 246 310 220 340 224C370 228 400 250 430 240C460 230 490 205 520 204C536 203 553 206 570 198" stroke="#FF9F0A" stroke-width="4" stroke-linecap="round"/>
+  <text x="82" y="88" fill="#375170" font-family="Arial, sans-serif" font-size="17" font-weight="700">Roll / Pitch / Yaw Live Graph</text>
+</svg>
