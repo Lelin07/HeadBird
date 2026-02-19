@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HeadBird | AirPods Motion for macOS</title>
+  <meta
+    name="description"
+    content="HeadBird is a native macOS menu bar app that reads AirPods head-tracking motion and visualizes roll, pitch, and yaw in real time."
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="page-bg" aria-hidden="true"></div>
+  <main class="container">
+    <header class="hero">
+      <img src="./assets/headbird-icon-squircle.png" alt="HeadBird app icon" class="app-icon" />
+      <p class="kicker">Native macOS Menu Bar App</p>
+      <h1>HeadBird</h1>
+      <p class="subtitle">
+        Read AirPods head-tracking signals in real time and visualize Roll, Pitch, and Yaw
+        with calibration and a tilt-controlled mini game.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/Lelin07/HeadBird/releases">Download from Releases</a>
+        <a class="btn btn-secondary" href="https://github.com/Lelin07/HeadBird#build-from-source-xcode">Build from Source</a>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2>What You Get</h2>
+      <div class="feature-grid">
+        <article class="card">
+          <h3>Motion Visuals</h3>
+          <p>Live Roll, Pitch, and Yaw telemetry with an easy-to-read history graph.</p>
+        </article>
+        <article class="card">
+          <h3>One-Click Calibration</h3>
+          <p>Zero your current head orientation instantly for stable interaction.</p>
+        </article>
+        <article class="card">
+          <h3>Head-Controlled Mini Game</h3>
+          <p>Tilt your head up and down to play directly from the menu bar app.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Install in Minutes</h2>
+      <ol class="steps">
+        <li>Open the latest release and download the HeadBird DMG.</li>
+        <li>Mount the DMG and drag <code>HeadBird.app</code> to <code>Applications</code>.</li>
+        <li>Launch HeadBird and grant Bluetooth + Motion permissions when prompted.</li>
+      </ol>
+      <p class="note">
+        If macOS blocks first launch as an unverified developer app, use the Finder
+        right-click <strong>Open</strong> flow. Full troubleshooting is in the
+        <a href="https://github.com/Lelin07/HeadBird#if-macos-shows-malware--unverified-developer-warning">README</a>.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>Privacy at a Glance</h2>
+      <ul class="privacy">
+        <li>No microphone recording.</li>
+        <li>No audio content processing.</li>
+        <li>Device state and motion are used locally for app features.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a href="https://github.com/Lelin07/HeadBird">Source</a>
+    <a href="https://github.com/Lelin07/HeadBird/issues">Issues</a>
+    <a href="https://github.com/Lelin07/HeadBird/blob/main/LICENSE">License</a>
+  </footer>
+</body>
+</html>
