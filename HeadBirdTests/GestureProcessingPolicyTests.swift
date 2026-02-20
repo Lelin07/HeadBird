@@ -3,13 +3,44 @@ import XCTest
 
 @MainActor
 final class GestureProcessingPolicyTests: XCTestCase {
-    func testTesterModeAnalyzesGesturesWhenControlModeIsOff() {
+    func testGestureAnalysisRespectsPromptAndTesterPolicies() {
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldAnalyzeGestures(
+                motionStreaming: true,
+                isGestureTesterActive: false,
+                gestureControlEnabled: false,
+                hasGestureProfile: false,
+                hasPromptTarget: false
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldAnalyzeGestures(
+                motionStreaming: true,
+                isGestureTesterActive: false,
+                gestureControlEnabled: true,
+                hasGestureProfile: true,
+                hasPromptTarget: false
+            )
+        )
+
         XCTAssertTrue(
             HeadBirdModelLogic.shouldAnalyzeGestures(
                 motionStreaming: true,
                 isGestureTesterActive: true,
                 gestureControlEnabled: false,
-                hasGestureProfile: false
+                hasGestureProfile: false,
+                hasPromptTarget: false
+            )
+        )
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldAnalyzeGestures(
+                motionStreaming: true,
+                isGestureTesterActive: false,
+                gestureControlEnabled: true,
+                hasGestureProfile: true,
+                hasPromptTarget: true
             )
         )
     }
