@@ -44,7 +44,7 @@ struct ContentView: View {
         let pitchDegrees = degrees(displayPose.pitch)
         let rollDegrees = degrees(displayPose.roll)
         let yawDegrees = degrees(displayPose.yaw)
-        let isEnabled = model.connectedAirPods.isEmpty == false
+        let isEnabled = model.hasAnyAirPodsConnection
         let pitchColor = Color.blue
         let rollColor = Color.orange
         let yawColor = Color.green
@@ -142,8 +142,7 @@ struct ContentView: View {
                 readinessCard
                 calibrationCard
                 liveTesterCard
-                mappingsCard
-                safetyCard
+                fixedMappingsCard
                 permissionsCard
             }
             .padding(.horizontal, 24)
@@ -175,21 +174,29 @@ struct ContentView: View {
                 detail: model.gestureControlEnabled ? "Enabled" : "Disabled",
                 isReady: model.gestureControlEnabled
             )
+            readinessRow(
+                title: "Prompt Target",
+                detail: promptTargetStatusText,
+                isReady: model.promptTargetCapabilities.hasAnyTarget
+            )
         }
     }
 
     private var calibrationCard: some View {
-        guidedCard(step: "Step 2", title: "Calibration", subtitle: "Capture neutral, nod, and shake to tune thresholds.") {
-            HStack(alignment: .center, spacing: 8) {
-                Text(calibrationStageLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
+        guidedCard(
+            step: "Step 2",
+            title: "Calibration",
+            subtitle: "Capture neutral, nod, and shake to tune thresholds.",
+            headerTrailing: {
                 stateChip(
                     title: model.usesFallbackGestureProfile ? "Fallback" : "Custom",
                     tint: model.usesFallbackGestureProfile ? .orange : .green
                 )
             }
+        ) {
+            Text(calibrationStageLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             Text(model.gestureCalibrationState.message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -218,43 +225,59 @@ struct ContentView: View {
     }
 
     private var liveTesterCard: some View {
-        guidedCard(step: "Step 3", title: "Live Tester", subtitle: "Confirms nod/shake capture even when actions are off.") {
-            HStack {
-                Toggle("Live tester enabled", isOn: $model.gestureTesterEnabled)
-                    .toggleStyle(.switch)
+        guidedCard(
+            step: "Step 3",
+            title: "Live Tester",
+            subtitle: "Visualizes nod/shake confidence while enabled. Actions still require a prompt target.",
+            headerTrailing: {
                 stateChip(
                     title: testerStateTitle,
                     tint: testerStateTint
                 )
+            }
+        ) {
+            HStack {
+                Text("Live tester enabled")
+                    .font(.caption.weight(.medium))
                 Spacer()
-                if model.gestureDiagnostics.sampleRateHertz > 0 {
+                if model.gestureTesterEnabled && model.gestureDiagnostics.sampleRateHertz > 0 {
                     Text(String(format: "%.1f Hz", model.gestureDiagnostics.sampleRateHertz))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
+                Toggle("", isOn: $model.gestureTesterEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!model.gestureControlEnabled)
             }
 
-            confidenceRow(
-                label: "Nod",
-                rawConfidence: model.gestureDiagnostics.rawNodConfidence,
-                smoothedConfidence: model.gestureDiagnostics.nodConfidence,
-                triggerThreshold: model.gestureDiagnostics.triggerThreshold,
-                tint: .blue
-            )
-            confidenceRow(
-                label: "Shake",
-                rawConfidence: model.gestureDiagnostics.rawShakeConfidence,
-                smoothedConfidence: model.gestureDiagnostics.shakeConfidence,
-                triggerThreshold: model.gestureDiagnostics.triggerThreshold,
-                tint: .green
-            )
+            if model.gestureTesterEnabled {
+                confidenceRow(
+                    label: "Nod",
+                    rawConfidence: model.gestureDiagnostics.rawNodConfidence,
+                    smoothedConfidence: model.gestureDiagnostics.nodConfidence,
+                    triggerThreshold: model.gestureDiagnostics.triggerThreshold,
+                    tint: .blue
+                )
+                confidenceRow(
+                    label: "Shake",
+                    rawConfidence: model.gestureDiagnostics.rawShakeConfidence,
+                    smoothedConfidence: model.gestureDiagnostics.shakeConfidence,
+                    triggerThreshold: model.gestureDiagnostics.triggerThreshold,
+                    tint: .green
+                )
 
-            HStack {
-                Text("Candidate")
-                    .font(.caption.weight(.medium))
-                Spacer()
-                Text(model.gestureDiagnostics.candidateGesture?.title ?? "None")
-                    .font(.caption.monospacedDigit())
+                HStack {
+                    Text("Candidate")
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text(model.gestureDiagnostics.candidateGesture?.title ?? "None")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Enable Live Tester to visualize nod/shake confidence.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
@@ -301,72 +324,33 @@ struct ContentView: View {
         }
     }
 
-    private var mappingsCard: some View {
-        guidedCard(step: "Step 4", title: "Mappings", subtitle: "Choose what each gesture does when actions are enabled.") {
-            mappingSection(
-                title: "Nod Mapping",
-                action: $model.nodMappedAction,
-                shortcutName: $model.nodShortcutName
-            )
-            Divider()
-            mappingSection(
-                title: "Shake Mapping",
-                action: $model.shakeMappedAction,
-                shortcutName: $model.shakeShortcutName
-            )
-        }
-    }
-
-    private func mappingSection(
-        title: String,
-        action: Binding<GestureMappedAction>,
-        shortcutName: Binding<String>
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-
-            Picker("Action", selection: action) {
-                ForEach(GestureMappedAction.allCases) { map in
-                    Text(map.title).tag(map)
-                }
+    private var fixedMappingsCard: some View {
+        guidedCard(step: "Step 4", title: "Gesture Mapping", subtitle: "Prompt control is fixed for now. More mappings can be added in a future update.") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Nod: Accept prompt")
+                    .font(.caption.weight(.medium))
+                Text("Shake: Reject prompt")
+                    .font(.caption.weight(.medium))
             }
-            .pickerStyle(.menu)
 
-            if action.wrappedValue.requiresShortcutName {
-                TextField(shortcutFieldPlaceholder(for: action.wrappedValue), text: shortcutName)
-                    .textFieldStyle(.roundedBorder)
-                Text(shortcutHelpText(for: action.wrappedValue))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var safetyCard: some View {
-        guidedCard(step: "Step 5", title: "Safety", subtitle: "Guardrails for accidental triggers and background behavior.") {
-            Toggle("Control mode enabled", isOn: $model.gestureControlEnabled)
-                .toggleStyle(.switch)
-
-            Toggle("Double-confirm gestures", isOn: $model.doubleConfirmEnabled)
-                .toggleStyle(.switch)
-
-            HStack(spacing: 10) {
-                Text("Extra Cooldown")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 100, alignment: .leading)
-                Slider(value: $model.gestureCooldownSeconds, in: 0...1.6, step: 0.05)
-                Text(String(format: "%.2fs", model.gestureCooldownSeconds))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 56, alignment: .trailing)
+            HStack {
+                Text("Control mode enabled")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Toggle("", isOn: $model.gestureControlEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!model.gestureCalibrationState.hasProfile)
             }
 
             Text(
                 model.gestureControlEnabled
-                    ? "Control mode is active in the background. Turn this off to stop head tracking and save CPU/battery."
-                    : "Control mode is off. Live tester can still show detection while this tab is open."
+                    ? (model.promptTargetCapabilities.hasAnyTarget
+                        ? "Control mode is active. Detected nod/shake can accept or reject prompts."
+                        : "Control mode is active but waiting for a prompt target.")
+                    : (model.gestureCalibrationState.hasProfile
+                        ? "Control mode is off. Enable it to run gesture features."
+                        : "Control mode is unavailable until calibration or Use Fallback sets a profile.")
             )
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -380,27 +364,16 @@ struct ContentView: View {
     }
 
     private var permissionsCard: some View {
-        guidedCard(step: "Step 6", title: "Permissions", subtitle: "Required for prompt actions and system event fallbacks.") {
+        guidedCard(step: "Step 5", title: "Permissions", subtitle: "Required for prompt actions.") {
             permissionRow(
                 title: "Accessibility",
                 isGranted: model.accessibilityTrusted,
                 help: "Needed for AX default/cancel button actions."
             )
 
-            permissionRow(
-                title: "Event Posting",
-                isGranted: model.postEventAccessGranted,
-                help: "Needed for Return/Escape fallback events."
-            )
-
             HStack(spacing: 8) {
                 Button("Request Accessibility") {
                     model.requestAccessibilityPermissionPrompt()
-                }
-                .buttonStyle(.bordered)
-
-                Button("Request Event Access") {
-                    model.requestPostEventPermissionPrompt()
                 }
                 .buttonStyle(.bordered)
 
@@ -496,6 +469,16 @@ struct ContentView: View {
         subtitle: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
+        guidedCard(step: step, title: title, subtitle: subtitle, headerTrailing: { EmptyView() }, content: content)
+    }
+
+    private func guidedCard<HeaderTrailing: View, Content: View>(
+        step: String,
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder headerTrailing: () -> HeaderTrailing,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(step)
@@ -510,6 +493,7 @@ struct ContentView: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
+                headerTrailing()
             }
             if let subtitle {
                 Text(subtitle)
@@ -589,19 +573,19 @@ struct ContentView: View {
     }
 
     private var liveTesterStatusText: String {
+        if !model.gestureCalibrationState.hasProfile {
+            return "Live tester is unavailable until calibration or Use Fallback provides a profile."
+        }
+        if !model.gestureControlEnabled {
+            return "Live tester is unavailable while Control Mode is off."
+        }
         if !model.gestureTesterEnabled {
-            if model.canExecuteGestureActions {
-                return "Live tester is off. Actions can still run because Control Mode is enabled."
-            }
-            return "Live tester is off. Enable it to monitor nod/shake confidence."
+            return "Live tester is off. Enable it to visualize nod/shake confidence, even without a prompt."
         }
         if !model.motionStreaming {
             return "Waiting for motion stream. Connect AirPods and keep this tab open."
         }
-        if model.canExecuteGestureActions {
-            return "Live tester is active. Detected gestures can execute mapped actions."
-        }
-        return "Live tester is active. Gestures are measured only."
+        return "Live tester is active. Visualization works without a prompt; actions still wait for prompt targets."
     }
 
     private var actionGateStatusText: String {
@@ -611,21 +595,44 @@ struct ContentView: View {
         if !model.gestureControlEnabled {
             return "Actions disabled because Control Mode is off."
         }
-        return "Actions are enabled."
+        if !model.accessibilityTrusted {
+            return "Actions disabled until Accessibility permission is granted."
+        }
+        if !model.promptTargetCapabilities.hasAnyTarget {
+            return "Control mode enabled, waiting for a prompt target."
+        }
+        return "Actions are enabled for the current prompt target."
+    }
+
+    private var promptTargetStatusText: String {
+        let capabilities = model.promptTargetCapabilities
+        if capabilities.canAccept && capabilities.canReject {
+            return "Accept and Reject available"
+        }
+        if capabilities.canAccept {
+            return "Accept only"
+        }
+        if capabilities.canReject {
+            return "Reject only"
+        }
+        if !model.accessibilityTrusted {
+            return "Accessibility required"
+        }
+        return "No prompt target"
     }
 
     private var testerStateTitle: String {
-        if !model.gestureTesterEnabled {
-            return "Tester Off"
-        }
-        return model.canExecuteGestureActions ? "Testing + Actions On" : "Testing Only"
+        model.gestureTesterEnabled ? "Tester On" : "Tester Off"
     }
 
     private var testerStateTint: Color {
+        if !model.gestureControlEnabled || !model.gestureCalibrationState.hasProfile {
+            return .orange
+        }
         if !model.gestureTesterEnabled {
             return .orange
         }
-        return model.canExecuteGestureActions ? .green : .blue
+        return .green
     }
 
     private func runCalibrationPrimaryAction() {
@@ -634,28 +641,6 @@ struct ContentView: View {
             model.startGestureCalibration()
         case .neutral, .nod, .shake:
             model.beginCalibrationCapture()
-        }
-    }
-
-    private func shortcutFieldPlaceholder(for action: GestureMappedAction) -> String {
-        switch action {
-        case .focusModeShortcut:
-            return "Focus Shortcut Name"
-        case .runShortcut:
-            return "Shortcut Name"
-        default:
-            return "Shortcut Name"
-        }
-    }
-
-    private func shortcutHelpText(for action: GestureMappedAction) -> String {
-        switch action {
-        case .focusModeShortcut:
-            return "Example: Focus Work, Focus Personal"
-        case .runShortcut:
-            return "Example: Dark Mode Toggle, Focus Work"
-        default:
-            return "Enter a valid Shortcut name."
         }
     }
 
