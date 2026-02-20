@@ -3,6 +3,13 @@ import CoreMotion
 import Foundation
 
 enum HeadBirdModelLogic {
+    static func hasAnyAirPodsConnection(
+        connectedAirPods: [String],
+        motionHeadphoneConnected: Bool
+    ) -> Bool {
+        connectedAirPods.isEmpty == false || motionHeadphoneConnected
+    }
+
     static func activeAirPodsName(
         connectedAirPods: [String],
         defaultOutputName: String?,
@@ -93,16 +100,19 @@ enum HeadBirdModelLogic {
         isGraphPlaying: Bool,
         gestureControlEnabled: Bool,
         hasGestureProfile: Bool,
+        hasPromptTarget: Bool,
         isCalibrationCapturing: Bool
     ) -> Bool {
         guard hasAnyAirPodsConnection else { return false }
         guard motionAuthorization != .denied, motionAuthorization != .restricted else { return false }
 
-        if (gestureControlEnabled && hasGestureProfile) || isCalibrationCapturing {
+        if isCalibrationCapturing {
             return true
         }
-
         if isGestureTesterEnabled {
+            return true
+        }
+        if gestureControlEnabled && hasGestureProfile && hasPromptTarget {
             return true
         }
 
@@ -117,13 +127,17 @@ enum HeadBirdModelLogic {
         motionStreaming: Bool,
         isGestureTesterActive: Bool,
         gestureControlEnabled: Bool,
-        hasGestureProfile: Bool
+        hasGestureProfile: Bool,
+        hasPromptTarget: Bool
     ) -> Bool {
         guard motionStreaming else { return false }
-        return isGestureTesterActive || shouldExecuteGestureActions(
+        if isGestureTesterActive {
+            return true
+        }
+        return shouldExecuteGestureActions(
             gestureControlEnabled: gestureControlEnabled,
             hasGestureProfile: hasGestureProfile
-        )
+        ) && hasPromptTarget
     }
 
     static func shouldExecuteGestureActions(
