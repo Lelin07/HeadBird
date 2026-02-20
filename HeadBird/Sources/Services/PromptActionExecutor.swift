@@ -1,7 +1,26 @@
 import AppKit
 import ApplicationServices
-import CoreGraphics
 import Foundation
+
+struct PromptTargetCapabilities: Equatable, Sendable {
+    let canAccept: Bool
+    let canReject: Bool
+
+    var hasAnyTarget: Bool {
+        canAccept || canReject
+    }
+
+    func supports(_ decision: PromptDecision) -> Bool {
+        switch decision {
+        case .accept:
+            return canAccept
+        case .reject:
+            return canReject
+        }
+    }
+
+    static let none = PromptTargetCapabilities(canAccept: false, canReject: false)
+}
 
 final class PromptActionExecutor {
     func isAccessibilityTrusted(prompt: Bool = false) -> Bool {
@@ -12,35 +31,32 @@ final class PromptActionExecutor {
         return AXIsProcessTrusted()
     }
 
-    func isPostEventAccessGranted() -> Bool {
-        CGPreflightPostEventAccess()
-    }
-
-    @discardableResult
-    func requestPostEventAccess() -> Bool {
-        CGRequestPostEventAccess()
+    func currentPromptTargetCapabilities() -> PromptTargetCapabilities {
+        guard isAccessibilityTrusted() else {
+            return .none
+        }
+        guard let focusedWindow = focusedWindowElement() else {
+            return .none
+        }
+        let canAccept = promptButton(decision: .accept, in: focusedWindow) != nil
+        let canReject = promptButton(decision: .reject, in: focusedWindow) != nil
+        return PromptTargetCapabilities(canAccept: canAccept, canReject: canReject)
     }
 
     func execute(decision: PromptDecision) -> GestureActionResult {
         guard isAccessibilityTrusted() else {
-            if fallbackByPostingKey(decision: decision) {
-                return .success(message(for: decision, suffix: "via key fallback"))
-            }
             return .failure("Accessibility permission is required for prompt control.")
         }
-
-        if pressPromptButton(decision: decision) {
-            return .success(message(for: decision))
+        guard let focusedWindow = focusedWindowElement(),
+              let targetButton = promptButton(decision: decision, in: focusedWindow) else {
+            return .ignored("No prompt target")
         }
 
-        if fallbackByPostingKey(decision: decision) {
-            return .success(message(for: decision, suffix: "via key fallback"))
-        }
-
-        return .failure("Couldn't control the current prompt.")
+        let status = AXUIElementPerformAction(targetButton, kAXPressAction as CFString)
+        return status == .success ? .success(message(for: decision)) : .failure("Couldn't control the current prompt.")
     }
 
-    private func message(for decision: PromptDecision, suffix: String? = nil) -> String {
+    private func message(for decision: PromptDecision) -> String {
         let base: String
         switch decision {
         case .accept:
@@ -48,39 +64,7 @@ final class PromptActionExecutor {
         case .reject:
             base = "Rejected prompt"
         }
-        if let suffix {
-            return "\(base) (\(suffix))"
-        }
         return base
-    }
-
-    private func pressPromptButton(decision: PromptDecision) -> Bool {
-        guard let focusedWindow = focusedWindowElement() else {
-            return false
-        }
-
-        let targetAttribute: CFString = {
-            switch decision {
-            case .accept:
-                return kAXDefaultButtonAttribute as CFString
-            case .reject:
-                return kAXCancelButtonAttribute as CFString
-            }
-        }()
-
-        if let targetButton = copyElementAttribute(from: focusedWindow, attribute: targetAttribute) {
-            let status = AXUIElementPerformAction(targetButton, kAXPressAction as CFString)
-            if status == .success {
-                return true
-            }
-        }
-
-        if let fallbackButton = buttonCandidate(in: focusedWindow, decision: decision) {
-            let status = AXUIElementPerformAction(fallbackButton, kAXPressAction as CFString)
-            return status == .success
-        }
-
-        return false
     }
 
     private func focusedWindowElement() -> AXUIElement? {
@@ -108,102 +92,16 @@ final class PromptActionExecutor {
         return value
     }
 
-    private func copyElementArrayAttribute(from element: AXUIElement, attribute: CFString) -> [AXUIElement] {
-        guard let value = copyAttributeValue(from: element, attribute: attribute) else { return [] }
-        return value as? [AXUIElement] ?? []
-    }
-
-    private func copyStringAttribute(from element: AXUIElement, attribute: CFString) -> String? {
-        guard let value = copyAttributeValue(from: element, attribute: attribute) else { return nil }
-        return value as? String
-    }
-
-    private func buttonCandidate(in window: AXUIElement, decision: PromptDecision) -> AXUIElement? {
-        let buttons = collectButtons(from: window, depth: 0, maxDepth: 6)
-        guard !buttons.isEmpty else { return nil }
-
-        let rejectTokens = [
-            "cancel",
-            "stay",
-            "dont",
-            "don't",
-            "no",
-            "close",
-            "deny",
-            "not now"
-        ]
-        let acceptTokens = [
-            "ok",
-            "yes",
-            "allow",
-            "continue",
-            "open",
-            "leave",
-            "empty",
-            "erase",
-            "delete",
-            "remove",
-            "replace"
-        ]
-
-        let tokens = decision == .reject ? rejectTokens : acceptTokens
-        if let matched = buttons.first(where: { button in
-            let title = normalizedButtonTitle(button)
-            return tokens.contains(where: { title.contains($0) })
-        }) {
-            return matched
-        }
-
-        if decision == .accept {
-            return buttons.last
-        }
-        return buttons.first
-    }
-
-    private func collectButtons(from element: AXUIElement, depth: Int, maxDepth: Int) -> [AXUIElement] {
-        guard depth <= maxDepth else { return [] }
-
-        let role = copyStringAttribute(from: element, attribute: kAXRoleAttribute as CFString) ?? ""
-        var buttons: [AXUIElement] = role == (kAXButtonRole as String) ? [element] : []
-
-        let children = copyElementArrayAttribute(from: element, attribute: kAXChildrenAttribute as CFString)
-        for child in children {
-            buttons.append(contentsOf: collectButtons(from: child, depth: depth + 1, maxDepth: maxDepth))
-        }
-
-        return buttons
-    }
-
-    private func normalizedButtonTitle(_ element: AXUIElement) -> String {
-        let title = copyStringAttribute(from: element, attribute: kAXTitleAttribute as CFString) ?? ""
-        return title.lowercased()
-    }
-
-    private func fallbackByPostingKey(decision: PromptDecision) -> Bool {
-        guard isPostEventAccessGranted() || requestPostEventAccess() else {
-            return false
-        }
-
-        let keyCode: CGKeyCode
+    private func targetAttribute(for decision: PromptDecision) -> CFString {
         switch decision {
         case .accept:
-            keyCode = 36 // Return
+            return kAXDefaultButtonAttribute as CFString
         case .reject:
-            keyCode = 53 // Escape
+            return kAXCancelButtonAttribute as CFString
         }
+    }
 
-        guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            return false
-        }
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) else {
-            return false
-        }
-        guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
-            return false
-        }
-
-        keyDown.post(tap: .cgAnnotatedSessionEventTap)
-        keyUp.post(tap: .cgAnnotatedSessionEventTap)
-        return true
+    private func promptButton(decision: PromptDecision, in focusedWindow: AXUIElement) -> AXUIElement? {
+        copyElementAttribute(from: focusedWindow, attribute: targetAttribute(for: decision))
     }
 }
