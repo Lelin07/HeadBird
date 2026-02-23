@@ -7,6 +7,11 @@ protocol AppleScriptExecuting {
     func executeAppleScript(source: String) -> GestureActionResult
 }
 
+enum SystemGestureAction: Equatable {
+    case toggleDarkMode
+    case playPauseMedia
+}
+
 final class ScriptActionExecutor {
     func executeAppleScript(source: String) -> GestureActionResult {
         let script = NSAppleScript(source: source)
