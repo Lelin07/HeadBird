@@ -91,46 +91,8 @@ struct GestureThresholdProfile: Codable, Equatable, Sendable {
     )
 }
 
-enum GestureMappedAction: String, Codable, CaseIterable, Identifiable {
-    case promptResponse
-    case runShortcut
-    case focusModeShortcut
-    case toggleDarkMode
-    case playPauseMedia
-    case recenterMotion
-    case toggleControlMode
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .promptResponse:
-            return "Prompt Accept/Reject"
-        case .runShortcut:
-            return "Run Shortcut"
-        case .focusModeShortcut:
-            return "Focus Toggle (Shortcut)"
-        case .toggleDarkMode:
-            return "Dark/Light Mode Toggle"
-        case .playPauseMedia:
-            return "Play/Pause Media"
-        case .recenterMotion:
-            return "Set Zero"
-        case .toggleControlMode:
-            return "Toggle Control Mode"
-        }
-    }
-
-    var requiresShortcutName: Bool {
-        self == .runShortcut || self == .focusModeShortcut
-    }
-}
-
-struct GestureActionRouteConfig: Equatable, Sendable {
-    var nodAction: GestureMappedAction
-    var shakeAction: GestureMappedAction
-    var nodShortcutName: String
-    var shakeShortcutName: String
+enum GestureActionMode: String, Codable, Sendable {
+    case promptResponses
 }
 
 enum GestureCalibrationStage: String, Codable, CaseIterable, Sendable {
