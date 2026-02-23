@@ -510,4 +510,292 @@ final class HeadBirdModelLogicTests: XCTestCase {
 
         defaults.removePersistentDomain(forName: suiteName)
     }
+
+    func testPromptTargetBannerEventPolicy() {
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: nil,
+                currentReadyState: false,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertEqual(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: nil,
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            ),
+            .ready
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: false,
+                currentReadyState: true,
+                canExecuteGestureActions: false,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: false,
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: true,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertEqual(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: false,
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            ),
+            .ready
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: true,
+                currentReadyState: false,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: true,
+                currentReadyState: false,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: now.addingTimeInterval(-1.0),
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousReadyState: true,
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+    }
+
+    func testDeferredPromptReadyBannerDeliveryPolicy() {
+        let now = Date(timeIntervalSince1970: 2_000)
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                hasPendingReadyBanner: true,
+                pendingDetectedAt: now.addingTimeInterval(-0.5),
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                hasPendingReadyBanner: true,
+                pendingDetectedAt: now.addingTimeInterval(-3.0),
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                hasPendingReadyBanner: true,
+                pendingDetectedAt: now.addingTimeInterval(-0.5),
+                currentReadyState: false,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                hasPendingReadyBanner: true,
+                pendingDetectedAt: now.addingTimeInterval(-0.5),
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: true,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                hasPendingReadyBanner: true,
+                pendingDetectedAt: now.addingTimeInterval(-0.5),
+                currentReadyState: true,
+                canExecuteGestureActions: true,
+                isPopoverVisible: false,
+                now: now,
+                lastBannerTimestamp: now.addingTimeInterval(-1.0),
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+    }
+
+    func testPromptTargetBannerEventPolicyUsesPromptSignatureIdentity() {
+        let now = Date(timeIntervalSince1970: 3_000)
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousPromptSignature: nil,
+                currentPromptSignature: nil,
+                canExecuteGestureActions: true,
+                suppressForPopover: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertEqual(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousPromptSignature: nil,
+                currentPromptSignature: "finder::emptytrash",
+                canExecuteGestureActions: true,
+                suppressForPopover: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            ),
+            .ready
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousPromptSignature: "finder::emptytrash",
+                currentPromptSignature: "finder::emptytrash",
+                canExecuteGestureActions: true,
+                suppressForPopover: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+
+        XCTAssertEqual(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousPromptSignature: "finder::emptytrash",
+                currentPromptSignature: "finder::deleteimmediately",
+                canExecuteGestureActions: true,
+                suppressForPopover: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            ),
+            .ready
+        )
+
+        XCTAssertNil(
+            HeadBirdModelLogic.promptTargetBannerEvent(
+                previousPromptSignature: nil,
+                currentPromptSignature: "finder::emptytrash",
+                canExecuteGestureActions: true,
+                suppressForPopover: true,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8
+            )
+        )
+    }
+
+    func testDeferredPromptReadyBannerDeliveryPolicyUsesSignatureMatch() {
+        let now = Date(timeIntervalSince1970: 4_000)
+
+        XCTAssertTrue(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                pendingPromptSignature: "finder::emptytrash",
+                pendingDetectedAt: now.addingTimeInterval(-0.4),
+                currentPromptSignature: "finder::emptytrash",
+                canExecuteGestureActions: true,
+                suppressForPopover: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                pendingPromptSignature: "finder::emptytrash",
+                pendingDetectedAt: now.addingTimeInterval(-0.4),
+                currentPromptSignature: "finder::deleteimmediately",
+                canExecuteGestureActions: true,
+                suppressForPopover: false,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+
+        XCTAssertFalse(
+            HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+                pendingPromptSignature: "finder::emptytrash",
+                pendingDetectedAt: now.addingTimeInterval(-0.4),
+                currentPromptSignature: "finder::emptytrash",
+                canExecuteGestureActions: true,
+                suppressForPopover: true,
+                now: now,
+                lastBannerTimestamp: nil,
+                cooldownSeconds: 1.8,
+                pendingMaxAgeSeconds: 2.0
+            )
+        )
+    }
 }
