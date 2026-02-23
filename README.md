@@ -23,6 +23,21 @@
   <img alt="Tooling" src="https://img.shields.io/badge/Xcode-15%2B-147EFB?logo=xcode&logoColor=white" />
 </p>
 
+## Table of Contents
+
+- [Features](#features)
+- [Install From Released DMG (Future Releases)](#install-from-released-dmg-future-releases)
+- [If macOS Shows "Malware" / Unverified Developer Warning](#if-macos-shows-malware--unverified-developer-warning)
+- [First-Launch Permissions](#first-launch-permissions)
+- [Build From Source (Xcode)](#build-from-source-xcode)
+- [Running Tests Locally](#running-tests-locally)
+- [DMG Release Wizard (Maintainers)](#dmg-release-wizard-maintainers)
+  - [Quickstart (Recommended)](#quickstart-recommended)
+  - [Advanced Non-Interactive Usage](#advanced-non-interactive-usage)
+  - [Troubleshooting](#troubleshooting)
+- [Versioning](#versioning)
+- [Privacy](#privacy)
+
 ## Features
 
 - Real-time Roll, Pitch, and Yaw visualization.
@@ -42,28 +57,27 @@ When a release is published on GitHub:
 
 ## If macOS Shows "Malware" / Unverified Developer Warning
 
-Because early releases may be distributed without Apple notarization, macOS Gatekeeper can block first launch.
-
-Use one of these methods:
-
-1. Finder method:
-   - Open `Applications`.
-   - Right-click `HeadBird.app` and click `Open`.
-   - Click `Open` again in the security prompt.
-2. System Settings method:
-   - Try opening the app once.
-   - Go to `System Settings -> Privacy & Security`.
-   - In the Security section, click `Open Anyway` for HeadBird.
-3. Terminal fallback (advanced users):
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/HeadBird.app"
-```
-
-Notes:
-
-- Only remove quarantine for apps you trust.
-- If checksum is provided in the release notes, verify it before first launch.
+> [!WARNING]
+> Because early releases may be distributed without Apple notarization, macOS Gatekeeper can block first launch.
+>
+> Use one of these methods:
+>
+> 1. **Finder method:**
+>    - Open `Applications`.
+>    - Right-click `HeadBird.app` and click `Open`.
+>    - Click `Open` again in the security prompt.
+> 2. **System Settings method:**
+>    - Try opening the app once.
+>    - Go to `System Settings -> Privacy & Security`.
+>    - In the Security section, click `Open Anyway` for HeadBird.
+> 3. **Terminal fallback (advanced users):**
+>    ```bash
+>    xattr -dr com.apple.quarantine "/Applications/HeadBird.app"
+>    ```
+>
+> **Notes:**
+> - Only remove quarantine for apps you trust.
+> - If checksum is provided in the release notes, verify it before first launch.
 
 ## First-Launch Permissions
 
