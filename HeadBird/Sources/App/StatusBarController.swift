@@ -19,14 +19,6 @@ final class HeadBirdAppDelegate: NSObject, NSApplicationDelegate {
         model.requestRequiredPermissions()
         model.refreshNow()
     }
-
-    func applicationDidResignActive(_ notification: Notification) {
-        model.setPopoverVisibility(false)
-    }
-
-    func applicationDidHide(_ notification: Notification) {
-        model.setPopoverVisibility(false)
-    }
 }
 
 @MainActor
@@ -141,11 +133,17 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         guard let button = statusItem?.button else { return }
         if popover.isShown {
             popover.performClose(nil)
+            DispatchQueue.main.async { [weak self] in
+                self?.syncPopoverVisibilityWithModel()
+            }
         } else {
             model?.requestRequiredPermissions()
             model?.refreshNow()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            DispatchQueue.main.async { [weak self] in
+                self?.syncPopoverVisibilityWithModel()
+            }
         }
     }
 
@@ -168,6 +166,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         model?.setPopoverVisibility(false)
+    }
+
+    private func syncPopoverVisibilityWithModel() {
+        model?.setPopoverVisibility(popover.isShown)
     }
 }
 
