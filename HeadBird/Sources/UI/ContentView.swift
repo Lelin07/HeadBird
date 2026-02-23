@@ -1,11 +1,13 @@
 import AppKit
 import CoreMotion
 import SwiftUI
+import UserNotifications
 
 struct ContentView: View {
     @EnvironmentObject private var model: HeadBirdModel
     @State private var selectedTab: PopoverTab = .motion
     @State private var graphStyle: MotionHistoryGraph.GraphStyle = .lines
+    @State private var isPromptDebugSnapshotExpanded = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -144,6 +146,7 @@ struct ContentView: View {
                 liveTesterCard
                 fixedMappingsCard
                 permissionsCard
+                promptDebugCard
             }
             .padding(.horizontal, 24)
             .padding(.top, 8)
@@ -178,6 +181,11 @@ struct ContentView: View {
                 title: "Prompt Target",
                 detail: promptTargetStatusText,
                 isReady: model.promptTargetCapabilities.hasAnyTarget
+            )
+            readinessRow(
+                title: "Prompt Target Name",
+                detail: promptTargetNameStatusText,
+                isReady: model.promptContextDetected && model.promptTargetName != nil
             )
         }
     }
@@ -381,6 +389,97 @@ struct ContentView: View {
                     model.refreshGesturePermissions(promptForAccessibility: false)
                 }
                 .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var promptDebugCard: some View {
+        guidedCard(step: "Debug", title: "Prompt Debug", subtitle: "Capture a bounded Accessibility snapshot to diagnose prompt detection.") {
+            HStack {
+                Text("AX Debug Mode")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { model.promptDebugModeEnabled },
+                        set: { model.setPromptDebugModeEnabled($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+
+            HStack {
+                Text("Allow banners while popover open (debug)")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { model.promptDebugNotificationOverrideEnabled },
+                        set: { model.setPromptDebugBannerOverride($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!model.promptDebugModeEnabled)
+            }
+
+            HStack(spacing: 8) {
+                Button("Capture Prompt Snapshot") {
+                    model.capturePromptAXDebugSnapshot()
+                    isPromptDebugSnapshotExpanded = true
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Clear Snapshot") {
+                    model.clearPromptAXDebugSnapshot()
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.lastPromptAXDebugSnapshot == nil)
+
+                Button("Copy Snapshot") {
+                    copyPromptDebugSnapshotToPasteboard()
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.lastPromptAXDebugSnapshot == nil)
+            }
+
+            readinessRow(
+                title: "Prompt Signature",
+                detail: model.promptTargetSignature ?? "No prompt signature",
+                isReady: model.promptTargetSignature != nil
+            )
+
+            readinessRow(
+                title: "Notification Permission",
+                detail: notificationAuthorizationStatusText,
+                isReady: model.notificationAuthorizationStatus == .authorized || model.notificationAuthorizationStatus == .provisional
+            )
+
+            readinessRow(
+                title: "Last Snapshot Summary",
+                detail: promptDebugSnapshotSummaryText,
+                isReady: model.lastPromptAXDebugSnapshot != nil
+            )
+
+            DisclosureGroup(isExpanded: $isPromptDebugSnapshotExpanded) {
+                ScrollView {
+                    Text(promptDebugSnapshotBodyText)
+                        .font(.caption.monospaced())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(minHeight: 120, maxHeight: 220)
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.08))
+                )
+            } label: {
+                Text("Snapshot Details")
+                    .font(.caption.weight(.medium))
             }
         }
     }
@@ -599,7 +698,7 @@ struct ContentView: View {
             return "Actions disabled until Accessibility permission is granted."
         }
         if !model.promptTargetCapabilities.hasAnyTarget {
-            return "Control mode enabled, waiting for a prompt target."
+            return "Control mode enabled, waiting for frontmost prompt target."
         }
         return "Actions are enabled for the current prompt target."
     }
@@ -615,10 +714,59 @@ struct ContentView: View {
         if capabilities.canReject {
             return "Reject only"
         }
-        if !model.accessibilityTrusted {
-            return "Accessibility required"
+        let reason = model.promptTargetDebugMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reason.isEmpty {
+            return "No prompt target"
         }
-        return "No prompt target"
+        return "No prompt target (\(reason))"
+    }
+
+    private var promptTargetNameStatusText: String {
+        guard model.promptContextDetected else {
+            return "No prompt detected"
+        }
+        if let name = model.promptTargetName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty {
+            return name
+        }
+        return "Prompt detected (name unavailable)"
+    }
+
+    private var notificationAuthorizationStatusText: String {
+        switch model.notificationAuthorizationStatus {
+        case .authorized:
+            return "Allowed"
+        case .provisional:
+            return "Provisional"
+        case .denied:
+            return "Denied"
+        case .notDetermined:
+            return "Not Determined"
+        case .ephemeral:
+            return "Ephemeral"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    private var promptDebugSnapshotSummaryText: String {
+        guard let snapshot = model.lastPromptAXDebugSnapshot else {
+            return "No snapshot captured"
+        }
+        let pid = snapshot.appProcessIdentifier.map(String.init) ?? "nil"
+        let reason = snapshot.failureReason?.rawValue ?? "none"
+        return "pid=\(pid) roots=\(snapshot.rootsCount) promptLike=\(snapshot.promptLikeContainerCount) buttons=\(snapshot.buttonCandidateCount) failure=\(reason)"
+    }
+
+    private var promptDebugSnapshotBodyText: String {
+        model.lastPromptAXDebugSnapshot?.formattedText ?? "Capture a prompt snapshot to inspect the AX tree."
+    }
+
+    private func copyPromptDebugSnapshotToPasteboard() {
+        guard let text = model.lastPromptAXDebugSnapshot?.formattedText else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     private var testerStateTitle: String {
