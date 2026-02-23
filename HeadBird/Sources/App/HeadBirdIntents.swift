@@ -3,8 +3,6 @@ import Foundation
 
 private enum GestureIntentDefaultsKey {
     static let gestureControlEnabled = "HeadBird.GestureControlEnabled"
-    static let nodMappedAction = "HeadBird.NodMappedAction"
-    static let shakeMappedAction = "HeadBird.ShakeMappedAction"
     static let pendingCalibrationStart = "HeadBird.PendingCalibrationStart"
 }
 
@@ -29,13 +27,11 @@ struct DisableGestureControlIntent: AppIntent {
 }
 
 struct SetPromptMappingsIntent: AppIntent {
-    static let title: LocalizedStringResource = "Set Nod/Shake Prompt Mapping"
+    static let title: LocalizedStringResource = "Use Prompt Gestures"
     static var openAppWhenRun: Bool { true }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        UserDefaults.standard.set(GestureMappedAction.promptResponse.rawValue, forKey: await GestureIntentDefaultsKey.nodMappedAction)
-        UserDefaults.standard.set(GestureMappedAction.promptResponse.rawValue, forKey: await GestureIntentDefaultsKey.shakeMappedAction)
-        return .result(dialog: IntentDialog("Nod and shake now map to prompt accept/reject."))
+        return .result(dialog: IntentDialog("HeadBird uses nod and shake for prompt accept/reject."))
     }
 }
 
