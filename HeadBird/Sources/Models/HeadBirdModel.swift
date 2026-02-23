@@ -2,6 +2,7 @@ import Combine
 import CoreBluetooth
 import CoreMotion
 import Foundation
+import UserNotifications
 
 enum MotionConnectionStatus: Equatable {
     case notConnected
@@ -67,7 +68,15 @@ final class HeadBirdModel: ObservableObject {
 
     @Published var gestureFeedbackMessage: String? = nil
     @Published var accessibilityTrusted: Bool = false
+    @Published private(set) var promptContextDetected: Bool = false
     @Published private(set) var promptTargetCapabilities: PromptTargetCapabilities = .none
+    @Published private(set) var promptTargetDebugMessage: String = "Prompt target scan inactive."
+    @Published private(set) var promptTargetName: String? = nil
+    @Published private(set) var promptTargetSignature: String? = nil
+    @Published private(set) var promptDebugModeEnabled: Bool = false
+    @Published private(set) var promptDebugNotificationOverrideEnabled: Bool = true
+    @Published private(set) var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
+    @Published private(set) var lastPromptAXDebugSnapshot: PromptAXDebugSnapshot? = nil
     @Published var usesFallbackGestureProfile: Bool = true
 
     private let defaults: UserDefaults
@@ -78,11 +87,18 @@ final class HeadBirdModel: ObservableObject {
     private let gestureDetector: HeadGestureDetector
     private let promptActionExecutor: PromptActionExecutor
     private let actionRouter: GestureActionRouter
+    private let promptTargetBannerNotifier: PromptTargetBannerNotifying
 
     private var cancellables = Set<AnyCancellable>()
     private var bluetoothTask: Task<Void, Never>?
     private var promptTargetPollingTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
+    private var lastPromptTargetBannerPromptSignature: String?
+    private var lastPromptTargetBannerTimestamp: Date?
+    private var pendingPromptReadyNotificationName: String?
+    private var pendingPromptReadyNotificationSignature: String?
+    private var pendingPromptReadyNotificationHasActionableTargets: Bool?
+    private var pendingPromptReadyDetectedAt: Date?
 
     private let historyWindow: TimeInterval = 5.0
     private let smoothingTimeConstant: Double = 0.08
@@ -91,6 +107,8 @@ final class HeadBirdModel: ObservableObject {
     private let deadzoneDegrees: Double = 1.5
     private let diagnosticsConfidenceDeltaThreshold: Double = 0.01
     private let diagnosticsSampleRateDeltaThreshold: Double = 0.5
+    private let promptTargetBannerCooldownSeconds: TimeInterval = 1.8
+    private let promptTargetReadyPendingMaxAgeSeconds: TimeInterval = 2.0
 
     private var lastMotionTimestamp: TimeInterval?
     private var lastHistoryTimestamp: TimeInterval?
@@ -125,7 +143,10 @@ final class HeadBirdModel: ObservableObject {
         ]
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        promptTargetBannerNotifier: PromptTargetBannerNotifying = PromptTargetBannerNotifier()
+    ) {
         self.defaults = defaults
         Self.sanitizeLegacyGestureSettingsIfNeeded(defaults: defaults)
 
@@ -136,6 +157,7 @@ final class HeadBirdModel: ObservableObject {
         self.actionRouter = GestureActionRouter(
             promptExecutor: promptActionExecutor
         )
+        self.promptTargetBannerNotifier = promptTargetBannerNotifier
 
         loadGestureSettings()
         bindSources()
@@ -280,6 +302,8 @@ final class HeadBirdModel: ObservableObject {
     func requestRequiredPermissions() {
         bluetoothMonitor.requestAuthorizationIfNeeded()
         motionMonitor.refreshStatus()
+        promptTargetBannerNotifier.requestAuthorizationIfNeeded()
+        refreshNotificationAuthorizationStatus()
         reevaluateMotionDemand()
     }
 
@@ -310,13 +334,55 @@ final class HeadBirdModel: ObservableObject {
 
     func refreshGesturePermissions(promptForAccessibility: Bool) {
         accessibilityTrusted = promptActionExecutor.isAccessibilityTrusted(prompt: promptForAccessibility)
+        promptTargetBannerNotifier.requestAuthorizationIfNeeded()
+        refreshNotificationAuthorizationStatus()
         refreshPromptTargetCapabilities()
+    }
+
+    func setPromptDebugModeEnabled(_ enabled: Bool) {
+        guard promptDebugModeEnabled != enabled else { return }
+        promptDebugModeEnabled = enabled
+        if enabled {
+            promptDebugNotificationOverrideEnabled = true
+        } else {
+            promptDebugNotificationOverrideEnabled = false
+        }
+        refreshPromptTargetCapabilities()
+    }
+
+    func setPromptDebugBannerOverride(_ enabled: Bool) {
+        promptDebugNotificationOverrideEnabled = enabled
+    }
+
+    func capturePromptAXDebugSnapshot() {
+        let capture = promptActionExecutor.currentPromptDebugCapture()
+        lastPromptAXDebugSnapshot = capture.snapshot
+        let evaluation = capture.evaluation
+        promptTargetCapabilities = evaluation.capabilities
+        promptContextDetected = evaluation.promptContextDetected
+        promptTargetDebugMessage = evaluation.debugMessage
+        promptTargetName = evaluation.promptContextDetected ? evaluation.promptName : nil
+        promptTargetSignature = evaluation.promptSignature
+    }
+
+    func clearPromptAXDebugSnapshot() {
+        lastPromptAXDebugSnapshot = nil
     }
 
     func toggleControlMode() {
         gestureControlEnabled.toggle()
         let message = gestureControlEnabled ? "Control mode enabled." : "Control mode disabled."
         setFeedback(message)
+    }
+
+    private func refreshNotificationAuthorizationStatus() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let status = await self.promptTargetBannerNotifier.authorizationStatus()
+            if self.notificationAuthorizationStatus != status {
+                self.notificationAuthorizationStatus = status
+            }
+        }
     }
 
     private func bindSources() {
@@ -759,22 +825,220 @@ final class HeadBirdModel: ObservableObject {
 
         promptTargetPollingTask?.cancel()
         promptTargetPollingTask = nil
+        var hasChanges = false
         if promptTargetCapabilities != .none {
             promptTargetCapabilities = .none
+            hasChanges = true
+        }
+        if promptContextDetected {
+            promptContextDetected = false
+            hasChanges = true
+        }
+        if promptTargetName != nil {
+            promptTargetName = nil
+            hasChanges = true
+        }
+        if promptTargetSignature != nil {
+            promptTargetSignature = nil
+            hasChanges = true
+        }
+        let inactiveReason = inactivePromptTargetReason()
+        if promptTargetDebugMessage != inactiveReason {
+            promptTargetDebugMessage = inactiveReason
+            hasChanges = true
+        }
+        pendingPromptReadyNotificationName = nil
+        pendingPromptReadyNotificationSignature = nil
+        pendingPromptReadyNotificationHasActionableTargets = nil
+        pendingPromptReadyDetectedAt = nil
+        if hasChanges {
+            motionMonitor.setStreamingEnabled(shouldStreamMotion)
         }
     }
 
     private func refreshPromptTargetCapabilities() {
         let capabilities: PromptTargetCapabilities
+        let promptContextDetected: Bool
+        let debugMessage: String
+        let promptName: String?
+        let promptSignature: String?
         if canExecuteGestureActions {
-            capabilities = promptActionExecutor.currentPromptTargetCapabilities()
+            let evaluation = promptActionExecutor.currentPromptTargetEvaluation(includeDebugSnapshot: false)
+            capabilities = evaluation.capabilities
+            promptContextDetected = evaluation.promptContextDetected
+            debugMessage = evaluation.debugMessage
+            promptName = evaluation.promptName
+            promptSignature = evaluation.promptSignature
+            if promptDebugModeEnabled {
+                lastPromptAXDebugSnapshot = promptActionExecutor.currentPromptDebugSnapshot()
+            }
+            maybeNotifyPromptTargetBanner(
+                promptContextDetected: promptContextDetected,
+                promptSignature: promptSignature,
+                capabilities: capabilities,
+                debugMessage: debugMessage,
+                promptName: promptName
+            )
         } else {
             capabilities = .none
+            promptContextDetected = false
+            debugMessage = inactivePromptTargetReason()
+            promptName = nil
+            promptSignature = nil
+            maybeNotifyPromptTargetBanner(
+                promptContextDetected: promptContextDetected,
+                promptSignature: promptSignature,
+                capabilities: capabilities,
+                debugMessage: debugMessage,
+                promptName: nil
+            )
         }
 
-        guard promptTargetCapabilities != capabilities else { return }
-        promptTargetCapabilities = capabilities
-        motionMonitor.setStreamingEnabled(shouldStreamMotion)
+        var hasChanges = false
+        if promptTargetCapabilities != capabilities {
+            promptTargetCapabilities = capabilities
+            hasChanges = true
+        }
+        if self.promptContextDetected != promptContextDetected {
+            self.promptContextDetected = promptContextDetected
+            hasChanges = true
+        }
+        if promptTargetDebugMessage != debugMessage {
+            promptTargetDebugMessage = debugMessage
+            hasChanges = true
+        }
+        let nextPromptTargetName = promptContextDetected ? promptName : nil
+        if promptTargetName != nextPromptTargetName {
+            promptTargetName = nextPromptTargetName
+            hasChanges = true
+        }
+        let nextPromptTargetSignature = promptContextDetected ? promptSignature : nil
+        if promptTargetSignature != nextPromptTargetSignature {
+            promptTargetSignature = nextPromptTargetSignature
+            hasChanges = true
+        }
+        if hasChanges {
+            motionMonitor.setStreamingEnabled(shouldStreamMotion)
+        }
+    }
+
+    private func maybeNotifyPromptTargetBanner(
+        promptContextDetected: Bool,
+        promptSignature: String?,
+        capabilities: PromptTargetCapabilities,
+        debugMessage: String,
+        promptName: String?
+    ) {
+        guard canExecuteGestureActions else {
+            lastPromptTargetBannerPromptSignature = nil
+            lastPromptTargetBannerTimestamp = nil
+            pendingPromptReadyNotificationName = nil
+            pendingPromptReadyNotificationSignature = nil
+            pendingPromptReadyNotificationHasActionableTargets = nil
+            pendingPromptReadyDetectedAt = nil
+            return
+        }
+
+        let currentPromptSignature = promptContextDetected ? promptSignature : nil
+        let previousPromptSignature = lastPromptTargetBannerPromptSignature
+        let now = Date()
+        let suppressForPopover = isPopoverVisible && !(promptDebugModeEnabled && promptDebugNotificationOverrideEnabled)
+
+        if suppressForPopover {
+            if let currentPromptSignature {
+                pendingPromptReadyNotificationName = resolvedPromptName(promptName: promptName, debugMessage: debugMessage)
+                pendingPromptReadyNotificationSignature = currentPromptSignature
+                pendingPromptReadyNotificationHasActionableTargets = capabilities.hasAnyTarget
+                pendingPromptReadyDetectedAt = now
+            } else {
+                pendingPromptReadyNotificationName = nil
+                pendingPromptReadyNotificationSignature = nil
+                pendingPromptReadyNotificationHasActionableTargets = nil
+                pendingPromptReadyDetectedAt = nil
+            }
+            lastPromptTargetBannerPromptSignature = currentPromptSignature
+            return
+        }
+
+        if HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+            pendingPromptSignature: pendingPromptReadyNotificationSignature,
+            pendingDetectedAt: pendingPromptReadyDetectedAt,
+            currentPromptSignature: currentPromptSignature,
+            canExecuteGestureActions: canExecuteGestureActions,
+            suppressForPopover: suppressForPopover,
+            now: now,
+            lastBannerTimestamp: lastPromptTargetBannerTimestamp,
+            cooldownSeconds: promptTargetBannerCooldownSeconds,
+            pendingMaxAgeSeconds: promptTargetReadyPendingMaxAgeSeconds
+        ) {
+            let pendingName = pendingPromptReadyNotificationName ?? resolvedPromptName(promptName: promptName, debugMessage: debugMessage)
+            if pendingPromptReadyNotificationHasActionableTargets == true {
+                promptTargetBannerNotifier.notifyTargetReady(promptName: pendingName)
+            } else {
+                promptTargetBannerNotifier.notifyPromptDetected(promptName: pendingName)
+            }
+            lastPromptTargetBannerTimestamp = now
+            pendingPromptReadyNotificationName = nil
+            pendingPromptReadyNotificationSignature = nil
+            pendingPromptReadyNotificationHasActionableTargets = nil
+            pendingPromptReadyDetectedAt = nil
+            lastPromptTargetBannerPromptSignature = currentPromptSignature
+            return
+        }
+
+        if currentPromptSignature == nil {
+            pendingPromptReadyNotificationName = nil
+            pendingPromptReadyNotificationSignature = nil
+            pendingPromptReadyNotificationHasActionableTargets = nil
+            pendingPromptReadyDetectedAt = nil
+        }
+
+        let event = HeadBirdModelLogic.promptTargetBannerEvent(
+            previousPromptSignature: previousPromptSignature,
+            currentPromptSignature: currentPromptSignature,
+            canExecuteGestureActions: canExecuteGestureActions,
+            suppressForPopover: suppressForPopover,
+            now: now,
+            lastBannerTimestamp: lastPromptTargetBannerTimestamp,
+            cooldownSeconds: promptTargetBannerCooldownSeconds
+        )
+        lastPromptTargetBannerPromptSignature = currentPromptSignature
+
+        guard let event else { return }
+
+        switch event {
+        case .ready:
+            let resolvedName = resolvedPromptName(promptName: promptName, debugMessage: debugMessage)
+            if capabilities.hasAnyTarget {
+                promptTargetBannerNotifier.notifyTargetReady(promptName: resolvedName)
+            } else {
+                promptTargetBannerNotifier.notifyPromptDetected(promptName: resolvedName)
+            }
+        }
+        lastPromptTargetBannerTimestamp = now
+        pendingPromptReadyNotificationName = nil
+        pendingPromptReadyNotificationSignature = nil
+        pendingPromptReadyNotificationHasActionableTargets = nil
+        pendingPromptReadyDetectedAt = nil
+    }
+
+    private func resolvedPromptName(promptName: String?, debugMessage: String) -> String {
+        let resolvedPromptName = promptName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let resolvedPromptName, !resolvedPromptName.isEmpty {
+            return resolvedPromptName
+        }
+        let reason = debugMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return reason.isEmpty ? "Unknown prompt" : reason
+    }
+
+    private func inactivePromptTargetReason() -> String {
+        if !gestureCalibrationState.hasProfile {
+            return "Calibration profile missing."
+        }
+        if !gestureControlEnabled {
+            return "Control mode is off."
+        }
+        return "Prompt target scan inactive."
     }
 
     private func promptDecision(for gesture: HeadGesture) -> PromptDecision {
