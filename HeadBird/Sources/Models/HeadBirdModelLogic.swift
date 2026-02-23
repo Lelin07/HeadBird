@@ -3,6 +3,10 @@ import CoreMotion
 import Foundation
 
 enum HeadBirdModelLogic {
+    enum PromptTargetBannerEvent: Equatable {
+        case ready
+    }
+
     static func hasAnyAirPodsConnection(
         connectedAirPods: [String],
         motionHeadphoneConnected: Bool
@@ -161,5 +165,101 @@ enum HeadBirdModelLogic {
         case .controls, .about:
             return false
         }
+    }
+
+    static func promptTargetBannerEvent(
+        previousPromptSignature: String?,
+        currentPromptSignature: String?,
+        canExecuteGestureActions: Bool,
+        suppressForPopover: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval
+    ) -> PromptTargetBannerEvent? {
+        guard canExecuteGestureActions else { return nil }
+        guard !suppressForPopover else { return nil }
+        guard let currentPromptSignature else { return nil }
+        if let previousPromptSignature, previousPromptSignature == currentPromptSignature {
+            return nil
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return nil
+        }
+        return .ready
+    }
+
+    static func shouldDeliverDeferredPromptReadyBanner(
+        pendingPromptSignature: String?,
+        pendingDetectedAt: Date?,
+        currentPromptSignature: String?,
+        canExecuteGestureActions: Bool,
+        suppressForPopover: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval,
+        pendingMaxAgeSeconds: TimeInterval
+    ) -> Bool {
+        guard let pendingPromptSignature else { return false }
+        guard canExecuteGestureActions else { return false }
+        guard !suppressForPopover else { return false }
+        guard let currentPromptSignature, currentPromptSignature == pendingPromptSignature else { return false }
+        if let pendingDetectedAt,
+           now.timeIntervalSince(pendingDetectedAt) > pendingMaxAgeSeconds {
+            return false
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return false
+        }
+        return true
+    }
+
+    static func promptTargetBannerEvent(
+        previousReadyState: Bool?,
+        currentReadyState: Bool,
+        canExecuteGestureActions: Bool,
+        isPopoverVisible: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval
+    ) -> PromptTargetBannerEvent? {
+        guard canExecuteGestureActions else { return nil }
+        guard !isPopoverVisible else { return nil }
+        if let previousReadyState, previousReadyState == currentReadyState {
+            return nil
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return nil
+        }
+        guard currentReadyState else { return nil }
+        return .ready
+    }
+
+    static func shouldDeliverDeferredPromptReadyBanner(
+        hasPendingReadyBanner: Bool,
+        pendingDetectedAt: Date?,
+        currentReadyState: Bool,
+        canExecuteGestureActions: Bool,
+        isPopoverVisible: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval,
+        pendingMaxAgeSeconds: TimeInterval
+    ) -> Bool {
+        guard hasPendingReadyBanner else { return false }
+        guard canExecuteGestureActions else { return false }
+        guard !isPopoverVisible else { return false }
+        guard currentReadyState else { return false }
+        if let pendingDetectedAt,
+           now.timeIntervalSince(pendingDetectedAt) > pendingMaxAgeSeconds {
+            return false
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return false
+        }
+        return true
     }
 }
