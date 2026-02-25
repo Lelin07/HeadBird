@@ -28,6 +28,20 @@
 >
 > This public repository is a development log, not a stable release. Backward compatibility is not guaranteed yet.
 
+## Table of Contents
+
+- [Website](#website)
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Install From Released DMG (Future Releases)](#install-from-released-dmg-future-releases)
+- [If macOS Shows "Malware" / Unverified Developer Warning](#if-macos-shows-malware--unverified-developer-warning)
+- [First-Launch Permissions](#first-launch-permissions)
+- [Build From Source (Xcode)](#build-from-source-xcode)
+- [Running Tests Locally](#running-tests-locally)
+- [DMG Release Wizard (Maintainers)](#dmg-release-wizard-maintainers)
+- [Versioning](#versioning)
+- [Privacy](#privacy)
+
 ## Website
 
 - Live site: https://lelin07.github.io/HeadBird/
