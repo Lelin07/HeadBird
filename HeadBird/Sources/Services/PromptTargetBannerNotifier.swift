@@ -10,6 +10,7 @@ protocol PromptTargetBannerNotifying {
     func notifyTargetLost(reason: String)
 }
 
+@MainActor
 protocol PromptTargetNotificationDriving {
     func authorizationStatus() async -> UNAuthorizationStatus
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
@@ -55,7 +56,7 @@ final class PromptTargetBannerNotifier: PromptTargetBannerNotifying {
         guard !hasRequestedAuthorization else { return }
         hasRequestedAuthorization = true
 
-        Task {
+        Task { @MainActor in
             let status = await driver.authorizationStatus()
             guard status == .notDetermined else { return }
             _ = try? await driver.requestAuthorization(options: [.alert, .sound])
@@ -83,7 +84,7 @@ final class PromptTargetBannerNotifier: PromptTargetBannerNotifying {
     }
 
     private func postBanner(body: String) {
-        Task {
+        Task { @MainActor in
             let status = await driver.authorizationStatus()
             guard canPostNotifications(status: status) else { return }
             try? await driver.postNotification(title: "HeadBird", body: body)

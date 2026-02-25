@@ -50,7 +50,8 @@ final class PromptTargetBannerNotifierTests: XCTestCase {
     }
 }
 
-actor PromptTargetNotificationDriverMock: PromptTargetNotificationDriving {
+@MainActor
+final class PromptTargetNotificationDriverMock: PromptTargetNotificationDriving {
     private(set) var status: UNAuthorizationStatus
     private(set) var requestCount = 0
     private(set) var postedBodies: [String] = []
