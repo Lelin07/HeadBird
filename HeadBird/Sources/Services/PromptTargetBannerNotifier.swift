@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 
+@MainActor
 protocol PromptTargetBannerNotifying {
     func requestAuthorizationIfNeeded()
     func authorizationStatus() async -> UNAuthorizationStatus

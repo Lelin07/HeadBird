@@ -2,26 +2,26 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-private let axSheetsAttribute = "AXSheets" as CFString
+nonisolated(unsafe) private let axSheetsAttribute = "AXSheets" as CFString
 private let axDialogRole = "AXDialog"
-private let axFocusedUIElementAttribute = "AXFocusedUIElement" as CFString
-private let axWindowsAttribute = "AXWindows" as CFString
-private let axFocusedApplicationAttribute = "AXFocusedApplication" as CFString
-private let axValueAttribute = "AXValue" as CFString
-private let axIdentifierAttribute = "AXIdentifier" as CFString
-private let axParentAttribute = "AXParent" as CFString
-private let axTopLevelUIElementAttribute = "AXTopLevelUIElement" as CFString
-private let axWindowAttribute = "AXWindow" as CFString
-private let axVisibleChildrenAttribute = "AXVisibleChildren" as CFString
-private let axContentsAttribute = "AXContents" as CFString
-private let axChildrenInNavigationOrderAttribute = "AXChildrenInNavigationOrder" as CFString
-private let axRowsAttribute = "AXRows" as CFString
-private let axSelectedChildrenAttribute = "AXSelectedChildren" as CFString
-private let axLinkedUIElementsAttribute = "AXLinkedUIElements" as CFString
-private let axLabelUIElementsAttribute = "AXLabelUIElements" as CFString
-private let axTitleUIElementAttribute = "AXTitleUIElement" as CFString
-private let axButtonsAttribute = "AXButtons" as CFString
-private let axLabelAttribute = "AXLabel" as CFString
+nonisolated(unsafe) private let axFocusedUIElementAttribute = "AXFocusedUIElement" as CFString
+nonisolated(unsafe) private let axWindowsAttribute = "AXWindows" as CFString
+nonisolated(unsafe) private let axFocusedApplicationAttribute = "AXFocusedApplication" as CFString
+nonisolated(unsafe) private let axValueAttribute = "AXValue" as CFString
+nonisolated(unsafe) private let axIdentifierAttribute = "AXIdentifier" as CFString
+nonisolated(unsafe) private let axParentAttribute = "AXParent" as CFString
+nonisolated(unsafe) private let axTopLevelUIElementAttribute = "AXTopLevelUIElement" as CFString
+nonisolated(unsafe) private let axWindowAttribute = "AXWindow" as CFString
+nonisolated(unsafe) private let axVisibleChildrenAttribute = "AXVisibleChildren" as CFString
+nonisolated(unsafe) private let axContentsAttribute = "AXContents" as CFString
+nonisolated(unsafe) private let axChildrenInNavigationOrderAttribute = "AXChildrenInNavigationOrder" as CFString
+nonisolated(unsafe) private let axRowsAttribute = "AXRows" as CFString
+nonisolated(unsafe) private let axSelectedChildrenAttribute = "AXSelectedChildren" as CFString
+nonisolated(unsafe) private let axLinkedUIElementsAttribute = "AXLinkedUIElements" as CFString
+nonisolated(unsafe) private let axLabelUIElementsAttribute = "AXLabelUIElements" as CFString
+nonisolated(unsafe) private let axTitleUIElementAttribute = "AXTitleUIElement" as CFString
+nonisolated(unsafe) private let axButtonsAttribute = "AXButtons" as CFString
+nonisolated(unsafe) private let axLabelAttribute = "AXLabel" as CFString
 
 enum PromptDebugFailureReason: String, Equatable, Sendable {
     case accessibilityPermissionRequired
