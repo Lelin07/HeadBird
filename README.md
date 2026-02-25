@@ -23,6 +23,11 @@
   <img alt="Tooling" src="https://img.shields.io/badge/Xcode-15%2B-147EFB?logo=xcode&logoColor=white" />
 </p>
 
+> [!WARNING]
+> HeadBird is in active development and currently unstable. Architecture, folder structure, and implementation details may change significantly as the project evolves.
+>
+> This public repository is a development log, not a stable release. Backward compatibility is not guaranteed yet.
+
 ## Website
 
 - Live site: https://lelin07.github.io/HeadBird/

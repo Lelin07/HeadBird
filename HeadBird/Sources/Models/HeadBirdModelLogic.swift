@@ -3,6 +3,17 @@ import CoreMotion
 import Foundation
 
 enum HeadBirdModelLogic {
+    enum PromptTargetBannerEvent: Equatable {
+        case ready
+    }
+
+    static func hasAnyAirPodsConnection(
+        connectedAirPods: [String],
+        motionHeadphoneConnected: Bool
+    ) -> Bool {
+        connectedAirPods.isEmpty == false || motionHeadphoneConnected
+    }
+
     static func activeAirPodsName(
         connectedAirPods: [String],
         defaultOutputName: String?,
@@ -89,17 +100,55 @@ enum HeadBirdModelLogic {
         motionAuthorization: CMAuthorizationStatus,
         isPopoverVisible: Bool,
         activeTab: PopoverTab,
+        isGestureTesterEnabled: Bool,
         isGraphPlaying: Bool,
         gestureControlEnabled: Bool,
+        hasGestureProfile: Bool,
+        hasPromptTarget: Bool,
         isCalibrationCapturing: Bool
     ) -> Bool {
         guard hasAnyAirPodsConnection else { return false }
         guard motionAuthorization != .denied, motionAuthorization != .restricted else { return false }
+
+        if isCalibrationCapturing {
+            return true
+        }
+        if isGestureTesterEnabled {
+            return true
+        }
+        if gestureControlEnabled && hasGestureProfile && hasPromptTarget {
+            return true
+        }
+
         guard isPopoverVisible else { return false }
 
-        let needsMotionGraph = isPopoverVisible && activeTab == .motion && isGraphPlaying
-        let needsGame = isPopoverVisible && activeTab == .game
-        return needsMotionGraph || needsGame || gestureControlEnabled || isCalibrationCapturing
+        let needsMotionGraph = activeTab == .motion && isGraphPlaying
+        let needsGame = activeTab == .game
+        return needsMotionGraph || needsGame
+    }
+
+    static func shouldAnalyzeGestures(
+        motionStreaming: Bool,
+        isGestureTesterActive: Bool,
+        gestureControlEnabled: Bool,
+        hasGestureProfile: Bool,
+        hasPromptTarget: Bool
+    ) -> Bool {
+        guard motionStreaming else { return false }
+        if isGestureTesterActive {
+            return true
+        }
+        return shouldExecuteGestureActions(
+            gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: hasGestureProfile
+        ) && hasPromptTarget
+    }
+
+    static func shouldExecuteGestureActions(
+        gestureControlEnabled: Bool,
+        hasGestureProfile: Bool
+    ) -> Bool {
+        gestureControlEnabled && hasGestureProfile
     }
 
     static func shouldPublishVisualMotionUpdates(
@@ -116,5 +165,101 @@ enum HeadBirdModelLogic {
         case .controls, .about:
             return false
         }
+    }
+
+    static func promptTargetBannerEvent(
+        previousPromptSignature: String?,
+        currentPromptSignature: String?,
+        canExecuteGestureActions: Bool,
+        suppressForPopover: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval
+    ) -> PromptTargetBannerEvent? {
+        guard canExecuteGestureActions else { return nil }
+        guard !suppressForPopover else { return nil }
+        guard let currentPromptSignature else { return nil }
+        if let previousPromptSignature, previousPromptSignature == currentPromptSignature {
+            return nil
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return nil
+        }
+        return .ready
+    }
+
+    static func shouldDeliverDeferredPromptReadyBanner(
+        pendingPromptSignature: String?,
+        pendingDetectedAt: Date?,
+        currentPromptSignature: String?,
+        canExecuteGestureActions: Bool,
+        suppressForPopover: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval,
+        pendingMaxAgeSeconds: TimeInterval
+    ) -> Bool {
+        guard let pendingPromptSignature else { return false }
+        guard canExecuteGestureActions else { return false }
+        guard !suppressForPopover else { return false }
+        guard let currentPromptSignature, currentPromptSignature == pendingPromptSignature else { return false }
+        if let pendingDetectedAt,
+           now.timeIntervalSince(pendingDetectedAt) > pendingMaxAgeSeconds {
+            return false
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return false
+        }
+        return true
+    }
+
+    static func promptTargetBannerEvent(
+        previousReadyState: Bool?,
+        currentReadyState: Bool,
+        canExecuteGestureActions: Bool,
+        isPopoverVisible: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval
+    ) -> PromptTargetBannerEvent? {
+        guard canExecuteGestureActions else { return nil }
+        guard !isPopoverVisible else { return nil }
+        if let previousReadyState, previousReadyState == currentReadyState {
+            return nil
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return nil
+        }
+        guard currentReadyState else { return nil }
+        return .ready
+    }
+
+    static func shouldDeliverDeferredPromptReadyBanner(
+        hasPendingReadyBanner: Bool,
+        pendingDetectedAt: Date?,
+        currentReadyState: Bool,
+        canExecuteGestureActions: Bool,
+        isPopoverVisible: Bool,
+        now: Date,
+        lastBannerTimestamp: Date?,
+        cooldownSeconds: TimeInterval,
+        pendingMaxAgeSeconds: TimeInterval
+    ) -> Bool {
+        guard hasPendingReadyBanner else { return false }
+        guard canExecuteGestureActions else { return false }
+        guard !isPopoverVisible else { return false }
+        guard currentReadyState else { return false }
+        if let pendingDetectedAt,
+           now.timeIntervalSince(pendingDetectedAt) > pendingMaxAgeSeconds {
+            return false
+        }
+        if let lastBannerTimestamp,
+           now.timeIntervalSince(lastBannerTimestamp) < cooldownSeconds {
+            return false
+        }
+        return true
     }
 }

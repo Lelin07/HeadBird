@@ -2,6 +2,7 @@ import Combine
 import CoreBluetooth
 import CoreMotion
 import Foundation
+import UserNotifications
 
 enum MotionConnectionStatus: Equatable {
     case notConnected
@@ -31,61 +32,51 @@ final class HeadBirdModel: ObservableObject {
 
     @Published var gestureControlEnabled: Bool = false {
         didSet {
+            if gestureControlEnabled && !gestureCalibrationState.hasProfile {
+                gestureControlEnabled = false
+                guard !isRestoringGestureSettings else { return }
+                setFeedback("Complete calibration or use fallback before enabling control mode.")
+                return
+            }
+            if !gestureControlEnabled && gestureTesterEnabled {
+                gestureTesterEnabled = false
+            }
             reevaluateMotionDemand()
             guard !isRestoringGestureSettings else { return }
             defaults.set(gestureControlEnabled, forKey: DefaultsKey.gestureControlEnabled)
         }
     }
+    @Published var gestureTesterEnabled: Bool = false {
+        didSet {
+            if gestureTesterEnabled && !gestureControlEnabled {
+                gestureTesterEnabled = false
+                return
+            }
+            reevaluateMotionDemand()
+            if !gestureTesterEnabled {
+                clearGestureDiagnostics()
+            }
+        }
+    }
 
     @Published var lastGestureEvent: HeadGestureEvent? = nil
+    @Published private(set) var lastGestureActionResult: String? = nil
+    @Published private(set) var lastGestureActionTimestamp: Date? = nil
     @Published var gestureCalibrationState: GestureCalibrationState = .initial
-
-    @Published var nodMappedAction: GestureMappedAction = .promptResponse {
-        didSet {
-            guard !isRestoringGestureSettings else { return }
-            defaults.set(nodMappedAction.rawValue, forKey: DefaultsKey.nodMappedAction)
-        }
-    }
-
-    @Published var shakeMappedAction: GestureMappedAction = .promptResponse {
-        didSet {
-            guard !isRestoringGestureSettings else { return }
-            defaults.set(shakeMappedAction.rawValue, forKey: DefaultsKey.shakeMappedAction)
-        }
-    }
-
-    @Published var nodShortcutName: String = "" {
-        didSet {
-            guard !isRestoringGestureSettings else { return }
-            defaults.set(nodShortcutName, forKey: DefaultsKey.nodShortcutName)
-        }
-    }
-
-    @Published var shakeShortcutName: String = "" {
-        didSet {
-            guard !isRestoringGestureSettings else { return }
-            defaults.set(shakeShortcutName, forKey: DefaultsKey.shakeShortcutName)
-        }
-    }
-
-    @Published var gestureCooldownSeconds: Double = 0 {
-        didSet {
-            gestureDetector.additionalCooldownSeconds = gestureCooldownSeconds
-            guard !isRestoringGestureSettings else { return }
-            defaults.set(gestureCooldownSeconds, forKey: DefaultsKey.gestureCooldownSeconds)
-        }
-    }
-
-    @Published var doubleConfirmEnabled: Bool = false {
-        didSet {
-            guard !isRestoringGestureSettings else { return }
-            defaults.set(doubleConfirmEnabled, forKey: DefaultsKey.doubleConfirmEnabled)
-        }
-    }
+    @Published private(set) var gestureDiagnostics: GestureDiagnostics = .empty
+    @Published private(set) var gestureActionMode: GestureActionMode = .promptResponses
 
     @Published var gestureFeedbackMessage: String? = nil
     @Published var accessibilityTrusted: Bool = false
-    @Published var postEventAccessGranted: Bool = false
+    @Published private(set) var promptContextDetected: Bool = false
+    @Published private(set) var promptTargetCapabilities: PromptTargetCapabilities = .none
+    @Published private(set) var promptTargetDebugMessage: String = "Prompt target scan inactive."
+    @Published private(set) var promptTargetName: String? = nil
+    @Published private(set) var promptTargetSignature: String? = nil
+    @Published private(set) var promptDebugModeEnabled: Bool = false
+    @Published private(set) var promptDebugNotificationOverrideEnabled: Bool = true
+    @Published private(set) var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
+    @Published private(set) var lastPromptAXDebugSnapshot: PromptAXDebugSnapshot? = nil
     @Published var usesFallbackGestureProfile: Bool = true
 
     private let defaults: UserDefaults
@@ -96,51 +87,77 @@ final class HeadBirdModel: ObservableObject {
     private let gestureDetector: HeadGestureDetector
     private let promptActionExecutor: PromptActionExecutor
     private let actionRouter: GestureActionRouter
+    private let promptTargetBannerNotifier: PromptTargetBannerNotifying
 
     private var cancellables = Set<AnyCancellable>()
     private var bluetoothTask: Task<Void, Never>?
+    private var promptTargetPollingTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
-    private var pendingConfirmation: (gesture: HeadGesture, timestamp: TimeInterval)?
+    private var lastPromptTargetBannerPromptSignature: String?
+    private var lastPromptTargetBannerTimestamp: Date?
+    private var pendingPromptReadyNotificationName: String?
+    private var pendingPromptReadyNotificationSignature: String?
+    private var pendingPromptReadyNotificationHasActionableTargets: Bool?
+    private var pendingPromptReadyDetectedAt: Date?
 
     private let historyWindow: TimeInterval = 5.0
     private let smoothingTimeConstant: Double = 0.08
     private let historySampleInterval: TimeInterval = 1.0 / 60.0
     private let gestureProcessingInterval: TimeInterval = 1.0 / 40.0
     private let deadzoneDegrees: Double = 1.5
-    private let pendingConfirmationWindow: TimeInterval = 2.0
+    private let diagnosticsConfidenceDeltaThreshold: Double = 0.01
+    private let diagnosticsSampleRateDeltaThreshold: Double = 0.5
+    private let promptTargetBannerCooldownSeconds: TimeInterval = 1.8
+    private let promptTargetReadyPendingMaxAgeSeconds: TimeInterval = 2.0
 
     private var lastMotionTimestamp: TimeInterval?
     private var lastHistoryTimestamp: TimeInterval?
     private var lastGestureProcessingTimestamp: TimeInterval?
+    private var lastGestureDiagnosticsTimestamp: TimeInterval?
     private var lastSampleSensorLocation: CMDeviceMotion.SensorLocation?
-    private var previousCalibrationStage: GestureCalibrationStage
     private var isRestoringGestureSettings: Bool = false
     private var isPopoverVisible: Bool = false
     private var activePopoverTab: PopoverTab = .motion
 
     private enum DefaultsKey {
         static let gestureControlEnabled = "HeadBird.GestureControlEnabled"
+        static let pendingCalibrationStart = "HeadBird.PendingCalibrationStart"
+        static let promptOnlyMigrationCompleted = "HeadBird.PromptOnlyMigrationCompleted"
+    }
+
+    private enum LegacyDefaultsKey {
         static let nodMappedAction = "HeadBird.NodMappedAction"
         static let shakeMappedAction = "HeadBird.ShakeMappedAction"
         static let nodShortcutName = "HeadBird.NodShortcutName"
         static let shakeShortcutName = "HeadBird.ShakeShortcutName"
         static let gestureCooldownSeconds = "HeadBird.GestureCooldownSeconds"
         static let doubleConfirmEnabled = "HeadBird.DoubleConfirmEnabled"
-        static let pendingCalibrationStart = "HeadBird.PendingCalibrationStart"
+
+        static let all: [String] = [
+            nodMappedAction,
+            shakeMappedAction,
+            nodShortcutName,
+            shakeShortcutName,
+            gestureCooldownSeconds,
+            doubleConfirmEnabled
+        ]
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        promptTargetBannerNotifier: PromptTargetBannerNotifying = PromptTargetBannerNotifier()
+    ) {
         self.defaults = defaults
+        Self.sanitizeLegacyGestureSettingsIfNeeded(defaults: defaults)
 
         let calibrationService = GestureCalibrationService(defaults: defaults)
         self.calibrationService = calibrationService
         self.gestureDetector = HeadGestureDetector(profile: calibrationService.profile)
         self.promptActionExecutor = PromptActionExecutor()
         self.actionRouter = GestureActionRouter(
-            promptExecutor: promptActionExecutor,
-            shortcutExecutor: ShortcutActionExecutor()
+            promptExecutor: promptActionExecutor
         )
-        self.previousCalibrationStage = calibrationService.state.stage
+        self.promptTargetBannerNotifier = promptTargetBannerNotifier
 
         loadGestureSettings()
         bindSources()
@@ -152,11 +169,15 @@ final class HeadBirdModel: ObservableObject {
 
     deinit {
         bluetoothTask?.cancel()
+        promptTargetPollingTask?.cancel()
         feedbackTask?.cancel()
     }
 
-    private var hasAnyAirPodsConnection: Bool {
-        connectedAirPods.isEmpty == false || motionHeadphoneConnected
+    var hasAnyAirPodsConnection: Bool {
+        HeadBirdModelLogic.hasAnyAirPodsConnection(
+            connectedAirPods: connectedAirPods,
+            motionHeadphoneConnected: motionHeadphoneConnected
+        )
     }
 
     var activeAirPodsName: String? {
@@ -207,13 +228,15 @@ final class HeadBirdModel: ObservableObject {
         motionStreaming && gestureCalibrationState.hasProfile
     }
 
-    var routeConfig: GestureActionRouteConfig {
-        GestureActionRouteConfig(
-            nodAction: nodMappedAction,
-            shakeAction: shakeMappedAction,
-            nodShortcutName: nodShortcutName,
-            shakeShortcutName: shakeShortcutName
+    var canExecuteGestureActions: Bool {
+        HeadBirdModelLogic.shouldExecuteGestureActions(
+            gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: gestureCalibrationState.hasProfile
         )
+    }
+
+    var isGestureTesterActive: Bool {
+        isGestureTesterEnabled && motionStreaming
     }
 
     func refreshNow() {
@@ -233,6 +256,7 @@ final class HeadBirdModel: ObservableObject {
             handleTabTransition(from: previousTab, to: activeTab)
         }
 
+        refreshPromptTargetCapabilities()
         reevaluateMotionDemand()
     }
 
@@ -248,6 +272,7 @@ final class HeadBirdModel: ObservableObject {
             handleTabTransition(from: previousTab, to: tab)
         }
 
+        refreshPromptTargetCapabilities()
         reevaluateMotionDemand()
     }
 
@@ -277,6 +302,8 @@ final class HeadBirdModel: ObservableObject {
     func requestRequiredPermissions() {
         bluetoothMonitor.requestAuthorizationIfNeeded()
         motionMonitor.refreshStatus()
+        promptTargetBannerNotifier.requestAuthorizationIfNeeded()
+        refreshNotificationAuthorizationStatus()
         reevaluateMotionDemand()
     }
 
@@ -291,7 +318,6 @@ final class HeadBirdModel: ObservableObject {
 
     func skipCalibrationWithFallbackProfile() {
         calibrationService.skipCalibrationAndUseFallback()
-        gestureControlEnabled = true
         setFeedback("Using fallback calibration profile.")
     }
 
@@ -306,20 +332,57 @@ final class HeadBirdModel: ObservableObject {
         refreshGesturePermissions(promptForAccessibility: false)
     }
 
-    func requestPostEventPermissionPrompt() {
-        _ = promptActionExecutor.requestPostEventAccess()
-        refreshGesturePermissions(promptForAccessibility: false)
-    }
-
     func refreshGesturePermissions(promptForAccessibility: Bool) {
         accessibilityTrusted = promptActionExecutor.isAccessibilityTrusted(prompt: promptForAccessibility)
-        postEventAccessGranted = promptActionExecutor.isPostEventAccessGranted()
+        promptTargetBannerNotifier.requestAuthorizationIfNeeded()
+        refreshNotificationAuthorizationStatus()
+        refreshPromptTargetCapabilities()
+    }
+
+    func setPromptDebugModeEnabled(_ enabled: Bool) {
+        guard promptDebugModeEnabled != enabled else { return }
+        promptDebugModeEnabled = enabled
+        if enabled {
+            promptDebugNotificationOverrideEnabled = true
+        } else {
+            promptDebugNotificationOverrideEnabled = false
+        }
+        refreshPromptTargetCapabilities()
+    }
+
+    func setPromptDebugBannerOverride(_ enabled: Bool) {
+        promptDebugNotificationOverrideEnabled = enabled
+    }
+
+    func capturePromptAXDebugSnapshot() {
+        let capture = promptActionExecutor.currentPromptDebugCapture()
+        lastPromptAXDebugSnapshot = capture.snapshot
+        let evaluation = capture.evaluation
+        promptTargetCapabilities = evaluation.capabilities
+        promptContextDetected = evaluation.promptContextDetected
+        promptTargetDebugMessage = evaluation.debugMessage
+        promptTargetName = evaluation.promptContextDetected ? evaluation.promptName : nil
+        promptTargetSignature = evaluation.promptSignature
+    }
+
+    func clearPromptAXDebugSnapshot() {
+        lastPromptAXDebugSnapshot = nil
     }
 
     func toggleControlMode() {
         gestureControlEnabled.toggle()
         let message = gestureControlEnabled ? "Control mode enabled." : "Control mode disabled."
         setFeedback(message)
+    }
+
+    private func refreshNotificationAuthorizationStatus() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let status = await self.promptTargetBannerNotifier.authorizationStatus()
+            if self.notificationAuthorizationStatus != status {
+                self.notificationAuthorizationStatus = status
+            }
+        }
     }
 
     private func bindSources() {
@@ -435,11 +498,10 @@ final class HeadBirdModel: ObservableObject {
             .sink { [weak self] state in
                 guard let self else { return }
                 self.gestureCalibrationState = state
-
-                if state.stage == .completed, self.previousCalibrationStage != .completed {
-                    self.gestureControlEnabled = true
+                if !state.hasProfile {
+                    self.gestureControlEnabled = false
                 }
-                self.previousCalibrationStage = state.stage
+                self.refreshPromptTargetCapabilities()
                 self.reevaluateMotionDemand()
             }
             .store(in: &cancellables)
@@ -465,47 +527,49 @@ final class HeadBirdModel: ObservableObject {
     }
 
     private func processGesture(sample: HeadphoneMotionSample) {
-        guard gestureControlEnabled else { return }
-        guard canUseGestureControls else { return }
+        let detection = gestureDetector.ingest(sample: sample)
+        updateGestureDiagnostics(with: detection, timestamp: sample.timestamp)
 
-        guard let event = gestureDetector.ingest(sample: sample) else {
+        guard let event = detection.event else {
             return
         }
 
         lastGestureEvent = event
 
-        if doubleConfirmEnabled {
-            if let pendingConfirmation,
-               pendingConfirmation.gesture == event.gesture,
-               event.timestamp - pendingConfirmation.timestamp <= pendingConfirmationWindow {
-                self.pendingConfirmation = nil
-            } else {
-                pendingConfirmation = (gesture: event.gesture, timestamp: event.timestamp)
-                setFeedback("Repeat \(event.gesture.title) to confirm.")
-                return
-            }
+        guard canExecuteGestureActions else {
+            return
+        }
+
+        let decision = promptDecision(for: event.gesture)
+        guard promptTargetCapabilities.supports(decision) else {
+            return
         }
 
         let result = actionRouter.route(
             event: event,
-            config: routeConfig,
-            recenterMotion: { [weak self] in
-                self?.recenterMotion()
-            },
-            toggleControlMode: { [weak self] in
-                guard let self else { return false }
-                self.gestureControlEnabled.toggle()
-                return self.gestureControlEnabled
-            }
+            mode: gestureActionMode
         )
 
+        if case .ignored = result {
+            return
+        }
+        lastGestureActionResult = "\(event.gesture.title): \(result.message)"
+        lastGestureActionTimestamp = Date()
         setFeedback("\(event.gesture.title) \(Int(event.confidence * 100))%: \(result.message)")
         refreshGesturePermissions(promptForAccessibility: false)
     }
 
     private func shouldProcessGestureSample(timestamp: TimeInterval) -> Bool {
-        guard gestureControlEnabled, canUseGestureControls else {
+        let shouldAnalyze = HeadBirdModelLogic.shouldAnalyzeGestures(
+            motionStreaming: motionStreaming,
+            isGestureTesterActive: isGestureTesterActive,
+            gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: gestureCalibrationState.hasProfile,
+            hasPromptTarget: promptTargetCapabilities.hasAnyTarget
+        )
+        guard shouldAnalyze else {
             lastGestureProcessingTimestamp = nil
+            clearGestureDiagnostics()
             return false
         }
         if let lastGestureProcessingTimestamp,
@@ -514,6 +578,76 @@ final class HeadBirdModel: ObservableObject {
         }
         lastGestureProcessingTimestamp = timestamp
         return true
+    }
+
+    private func updateGestureDiagnostics(with result: GestureDetectionResult, timestamp: TimeInterval) {
+        guard gestureTesterEnabled else {
+            clearGestureDiagnostics()
+            return
+        }
+        let sampleRateHertz: Double
+        if let lastGestureDiagnosticsTimestamp {
+            let dt = timestamp - lastGestureDiagnosticsTimestamp
+            if dt > 0 {
+                let instantaneousHertz = min(120, max(0, 1.0 / dt))
+                sampleRateHertz = gestureDiagnostics.sampleRateHertz == 0
+                    ? instantaneousHertz
+                    : (gestureDiagnostics.sampleRateHertz * 0.78) + (instantaneousHertz * 0.22)
+            } else {
+                sampleRateHertz = gestureDiagnostics.sampleRateHertz
+            }
+        } else {
+            sampleRateHertz = 0
+        }
+        lastGestureDiagnosticsTimestamp = timestamp
+        let diagnostics = GestureDiagnostics(
+            rawNodConfidence: result.rawNodConfidence,
+            rawShakeConfidence: result.rawShakeConfidence,
+            nodConfidence: result.nodConfidence,
+            shakeConfidence: result.shakeConfidence,
+            triggerThreshold: gestureDetector.profile.minConfidence,
+            sampleRateHertz: sampleRateHertz,
+            candidateGesture: result.candidateGesture,
+            lastUpdatedTimestamp: timestamp
+        )
+
+        if shouldPublishGestureDiagnostics(diagnostics, eventDetected: result.event != nil) {
+            gestureDiagnostics = diagnostics
+        }
+    }
+
+    private func shouldPublishGestureDiagnostics(_ next: GestureDiagnostics, eventDetected: Bool) -> Bool {
+        if eventDetected {
+            return true
+        }
+        let current = gestureDiagnostics
+        if current == .empty {
+            return next.sampleRateHertz > 0 || next.candidateGesture != nil
+        }
+        if abs(next.rawNodConfidence - current.rawNodConfidence) >= diagnosticsConfidenceDeltaThreshold {
+            return true
+        }
+        if abs(next.rawShakeConfidence - current.rawShakeConfidence) >= diagnosticsConfidenceDeltaThreshold {
+            return true
+        }
+        if abs(next.sampleRateHertz - current.sampleRateHertz) >= diagnosticsSampleRateDeltaThreshold {
+            return true
+        }
+        if next.candidateGesture != current.candidateGesture {
+            return true
+        }
+        if abs(next.triggerThreshold - current.triggerThreshold) >= 0.001 {
+            return true
+        }
+        return false
+    }
+
+    private func clearGestureDiagnostics() {
+        if gestureDiagnostics == .empty {
+            return
+        }
+        lastGestureDiagnosticsTimestamp = nil
+        gestureDiagnostics = .empty
     }
 
     private func startBluetoothPolling() {
@@ -623,8 +757,11 @@ final class HeadBirdModel: ObservableObject {
             motionAuthorization: motionAuthorization,
             isPopoverVisible: isPopoverVisible,
             activeTab: activePopoverTab,
+            isGestureTesterEnabled: isGestureTesterEnabled,
             isGraphPlaying: isGraphPlaying,
             gestureControlEnabled: gestureControlEnabled,
+            hasGestureProfile: gestureCalibrationState.hasProfile,
+            hasPromptTarget: promptTargetCapabilities.hasAnyTarget,
             isCalibrationCapturing: gestureCalibrationState.isCapturing
         )
     }
@@ -637,22 +774,275 @@ final class HeadBirdModel: ObservableObject {
         )
     }
 
+    private var isGestureTesterVisible: Bool {
+        isPopoverVisible && activePopoverTab == .controls
+    }
+
+    private var isGestureTesterEnabled: Bool {
+        isGestureTesterVisible && gestureTesterEnabled
+    }
+
     private var preferredMotionSampleRate: Double {
         if shouldPublishVisualMotionUpdates {
             return 45
         }
+        if isGestureTesterEnabled {
+            return 30
+        }
         if gestureCalibrationState.isCapturing {
             return 40
         }
-        if gestureControlEnabled {
+        if gestureControlEnabled && gestureCalibrationState.hasProfile {
+            if !isPopoverVisible {
+                return 20
+            }
             return 30
         }
         return 20
     }
 
     private func reevaluateMotionDemand() {
+        updatePromptTargetPolling()
         motionMonitor.setPreferredSampleRate(preferredMotionSampleRate)
         motionMonitor.setStreamingEnabled(shouldStreamMotion)
+    }
+
+    private func updatePromptTargetPolling() {
+        let shouldPoll = canExecuteGestureActions
+        if shouldPoll {
+            if promptTargetPollingTask == nil {
+                refreshPromptTargetCapabilities()
+                promptTargetPollingTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    while !Task.isCancelled {
+                        self.refreshPromptTargetCapabilities()
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                }
+            }
+            return
+        }
+
+        promptTargetPollingTask?.cancel()
+        promptTargetPollingTask = nil
+        var hasChanges = false
+        if promptTargetCapabilities != .none {
+            promptTargetCapabilities = .none
+            hasChanges = true
+        }
+        if promptContextDetected {
+            promptContextDetected = false
+            hasChanges = true
+        }
+        if promptTargetName != nil {
+            promptTargetName = nil
+            hasChanges = true
+        }
+        if promptTargetSignature != nil {
+            promptTargetSignature = nil
+            hasChanges = true
+        }
+        let inactiveReason = inactivePromptTargetReason()
+        if promptTargetDebugMessage != inactiveReason {
+            promptTargetDebugMessage = inactiveReason
+            hasChanges = true
+        }
+        pendingPromptReadyNotificationName = nil
+        pendingPromptReadyNotificationSignature = nil
+        pendingPromptReadyNotificationHasActionableTargets = nil
+        pendingPromptReadyDetectedAt = nil
+        if hasChanges {
+            motionMonitor.setStreamingEnabled(shouldStreamMotion)
+        }
+    }
+
+    private func refreshPromptTargetCapabilities() {
+        let capabilities: PromptTargetCapabilities
+        let promptContextDetected: Bool
+        let debugMessage: String
+        let promptName: String?
+        let promptSignature: String?
+        if canExecuteGestureActions {
+            let evaluation = promptActionExecutor.currentPromptTargetEvaluation(includeDebugSnapshot: false)
+            capabilities = evaluation.capabilities
+            promptContextDetected = evaluation.promptContextDetected
+            debugMessage = evaluation.debugMessage
+            promptName = evaluation.promptName
+            promptSignature = evaluation.promptSignature
+            if promptDebugModeEnabled {
+                lastPromptAXDebugSnapshot = promptActionExecutor.currentPromptDebugSnapshot()
+            }
+            maybeNotifyPromptTargetBanner(
+                promptContextDetected: promptContextDetected,
+                promptSignature: promptSignature,
+                capabilities: capabilities,
+                debugMessage: debugMessage,
+                promptName: promptName
+            )
+        } else {
+            capabilities = .none
+            promptContextDetected = false
+            debugMessage = inactivePromptTargetReason()
+            promptName = nil
+            promptSignature = nil
+            maybeNotifyPromptTargetBanner(
+                promptContextDetected: promptContextDetected,
+                promptSignature: promptSignature,
+                capabilities: capabilities,
+                debugMessage: debugMessage,
+                promptName: nil
+            )
+        }
+
+        var hasChanges = false
+        if promptTargetCapabilities != capabilities {
+            promptTargetCapabilities = capabilities
+            hasChanges = true
+        }
+        if self.promptContextDetected != promptContextDetected {
+            self.promptContextDetected = promptContextDetected
+            hasChanges = true
+        }
+        if promptTargetDebugMessage != debugMessage {
+            promptTargetDebugMessage = debugMessage
+            hasChanges = true
+        }
+        let nextPromptTargetName = promptContextDetected ? promptName : nil
+        if promptTargetName != nextPromptTargetName {
+            promptTargetName = nextPromptTargetName
+            hasChanges = true
+        }
+        let nextPromptTargetSignature = promptContextDetected ? promptSignature : nil
+        if promptTargetSignature != nextPromptTargetSignature {
+            promptTargetSignature = nextPromptTargetSignature
+            hasChanges = true
+        }
+        if hasChanges {
+            motionMonitor.setStreamingEnabled(shouldStreamMotion)
+        }
+    }
+
+    private func maybeNotifyPromptTargetBanner(
+        promptContextDetected: Bool,
+        promptSignature: String?,
+        capabilities: PromptTargetCapabilities,
+        debugMessage: String,
+        promptName: String?
+    ) {
+        guard canExecuteGestureActions else {
+            lastPromptTargetBannerPromptSignature = nil
+            lastPromptTargetBannerTimestamp = nil
+            pendingPromptReadyNotificationName = nil
+            pendingPromptReadyNotificationSignature = nil
+            pendingPromptReadyNotificationHasActionableTargets = nil
+            pendingPromptReadyDetectedAt = nil
+            return
+        }
+
+        let currentPromptSignature = promptContextDetected ? promptSignature : nil
+        let previousPromptSignature = lastPromptTargetBannerPromptSignature
+        let now = Date()
+        let suppressForPopover = isPopoverVisible && !(promptDebugModeEnabled && promptDebugNotificationOverrideEnabled)
+
+        if suppressForPopover {
+            if let currentPromptSignature {
+                pendingPromptReadyNotificationName = resolvedPromptName(promptName: promptName, debugMessage: debugMessage)
+                pendingPromptReadyNotificationSignature = currentPromptSignature
+                pendingPromptReadyNotificationHasActionableTargets = capabilities.hasAnyTarget
+                pendingPromptReadyDetectedAt = now
+            } else {
+                pendingPromptReadyNotificationName = nil
+                pendingPromptReadyNotificationSignature = nil
+                pendingPromptReadyNotificationHasActionableTargets = nil
+                pendingPromptReadyDetectedAt = nil
+            }
+            lastPromptTargetBannerPromptSignature = currentPromptSignature
+            return
+        }
+
+        if HeadBirdModelLogic.shouldDeliverDeferredPromptReadyBanner(
+            pendingPromptSignature: pendingPromptReadyNotificationSignature,
+            pendingDetectedAt: pendingPromptReadyDetectedAt,
+            currentPromptSignature: currentPromptSignature,
+            canExecuteGestureActions: canExecuteGestureActions,
+            suppressForPopover: suppressForPopover,
+            now: now,
+            lastBannerTimestamp: lastPromptTargetBannerTimestamp,
+            cooldownSeconds: promptTargetBannerCooldownSeconds,
+            pendingMaxAgeSeconds: promptTargetReadyPendingMaxAgeSeconds
+        ) {
+            let pendingName = pendingPromptReadyNotificationName ?? resolvedPromptName(promptName: promptName, debugMessage: debugMessage)
+            if pendingPromptReadyNotificationHasActionableTargets == true {
+                promptTargetBannerNotifier.notifyTargetReady(promptName: pendingName)
+            } else {
+                promptTargetBannerNotifier.notifyPromptDetected(promptName: pendingName)
+            }
+            lastPromptTargetBannerTimestamp = now
+            pendingPromptReadyNotificationName = nil
+            pendingPromptReadyNotificationSignature = nil
+            pendingPromptReadyNotificationHasActionableTargets = nil
+            pendingPromptReadyDetectedAt = nil
+            lastPromptTargetBannerPromptSignature = currentPromptSignature
+            return
+        }
+
+        if currentPromptSignature == nil {
+            pendingPromptReadyNotificationName = nil
+            pendingPromptReadyNotificationSignature = nil
+            pendingPromptReadyNotificationHasActionableTargets = nil
+            pendingPromptReadyDetectedAt = nil
+        }
+
+        let event = HeadBirdModelLogic.promptTargetBannerEvent(
+            previousPromptSignature: previousPromptSignature,
+            currentPromptSignature: currentPromptSignature,
+            canExecuteGestureActions: canExecuteGestureActions,
+            suppressForPopover: suppressForPopover,
+            now: now,
+            lastBannerTimestamp: lastPromptTargetBannerTimestamp,
+            cooldownSeconds: promptTargetBannerCooldownSeconds
+        )
+        lastPromptTargetBannerPromptSignature = currentPromptSignature
+
+        guard let event else { return }
+
+        switch event {
+        case .ready:
+            let resolvedName = resolvedPromptName(promptName: promptName, debugMessage: debugMessage)
+            if capabilities.hasAnyTarget {
+                promptTargetBannerNotifier.notifyTargetReady(promptName: resolvedName)
+            } else {
+                promptTargetBannerNotifier.notifyPromptDetected(promptName: resolvedName)
+            }
+        }
+        lastPromptTargetBannerTimestamp = now
+        pendingPromptReadyNotificationName = nil
+        pendingPromptReadyNotificationSignature = nil
+        pendingPromptReadyNotificationHasActionableTargets = nil
+        pendingPromptReadyDetectedAt = nil
+    }
+
+    private func resolvedPromptName(promptName: String?, debugMessage: String) -> String {
+        let resolvedPromptName = promptName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let resolvedPromptName, !resolvedPromptName.isEmpty {
+            return resolvedPromptName
+        }
+        let reason = debugMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return reason.isEmpty ? "Unknown prompt" : reason
+    }
+
+    private func inactivePromptTargetReason() -> String {
+        if !gestureCalibrationState.hasProfile {
+            return "Calibration profile missing."
+        }
+        if !gestureControlEnabled {
+            return "Control mode is off."
+        }
+        return "Prompt target scan inactive."
+    }
+
+    private func promptDecision(for gesture: HeadGesture) -> PromptDecision {
+        gesture == .nod ? .accept : .reject
     }
 
     private func handleTabTransition(from previous: PopoverTab, to next: PopoverTab) {
@@ -671,31 +1061,13 @@ final class HeadBirdModel: ObservableObject {
         isRestoringGestureSettings = true
 
         gestureControlEnabled = defaults.bool(forKey: DefaultsKey.gestureControlEnabled)
-
-        if let storedNodAction = defaults.string(forKey: DefaultsKey.nodMappedAction),
-           let action = GestureMappedAction(rawValue: storedNodAction) {
-            nodMappedAction = action
-        }
-
-        if let storedShakeAction = defaults.string(forKey: DefaultsKey.shakeMappedAction),
-           let action = GestureMappedAction(rawValue: storedShakeAction) {
-            shakeMappedAction = action
-        }
-
-        nodShortcutName = defaults.string(forKey: DefaultsKey.nodShortcutName) ?? ""
-        shakeShortcutName = defaults.string(forKey: DefaultsKey.shakeShortcutName) ?? ""
-
-        if defaults.object(forKey: DefaultsKey.gestureCooldownSeconds) != nil {
-            gestureCooldownSeconds = defaults.double(forKey: DefaultsKey.gestureCooldownSeconds)
-        }
-
-        if defaults.object(forKey: DefaultsKey.doubleConfirmEnabled) != nil {
-            doubleConfirmEnabled = defaults.bool(forKey: DefaultsKey.doubleConfirmEnabled)
-        }
-
-        gestureDetector.additionalCooldownSeconds = gestureCooldownSeconds
+        gestureActionMode = .promptResponses
         gestureCalibrationState = calibrationService.state
         usesFallbackGestureProfile = calibrationService.isUsingFallbackProfile
+        if !gestureCalibrationState.hasProfile {
+            gestureControlEnabled = false
+        }
+        refreshPromptTargetCapabilities()
         isRestoringGestureSettings = false
     }
 
@@ -713,44 +1085,22 @@ final class HeadBirdModel: ObservableObject {
         if gestureControlEnabled != defaultControlMode {
             gestureControlEnabled = defaultControlMode
         }
-
-        if let storedNodAction = defaults.string(forKey: DefaultsKey.nodMappedAction),
-           let action = GestureMappedAction(rawValue: storedNodAction),
-           action != nodMappedAction {
-            nodMappedAction = action
-        }
-
-        if let storedShakeAction = defaults.string(forKey: DefaultsKey.shakeMappedAction),
-           let action = GestureMappedAction(rawValue: storedShakeAction),
-           action != shakeMappedAction {
-            shakeMappedAction = action
-        }
-
-        let storedNodShortcut = defaults.string(forKey: DefaultsKey.nodShortcutName) ?? ""
-        if storedNodShortcut != nodShortcutName {
-            nodShortcutName = storedNodShortcut
-        }
-
-        let storedShakeShortcut = defaults.string(forKey: DefaultsKey.shakeShortcutName) ?? ""
-        if storedShakeShortcut != shakeShortcutName {
-            shakeShortcutName = storedShakeShortcut
-        }
-
-        if defaults.object(forKey: DefaultsKey.gestureCooldownSeconds) != nil {
-            let storedCooldown = defaults.double(forKey: DefaultsKey.gestureCooldownSeconds)
-            if storedCooldown != gestureCooldownSeconds {
-                gestureCooldownSeconds = storedCooldown
-            }
-        }
-
-        if defaults.object(forKey: DefaultsKey.doubleConfirmEnabled) != nil {
-            let storedDoubleConfirm = defaults.bool(forKey: DefaultsKey.doubleConfirmEnabled)
-            if storedDoubleConfirm != doubleConfirmEnabled {
-                doubleConfirmEnabled = storedDoubleConfirm
-            }
+        if !gestureCalibrationState.hasProfile, gestureControlEnabled {
+            gestureControlEnabled = false
         }
 
         isRestoringGestureSettings = false
+    }
+
+    static func sanitizeLegacyGestureSettingsIfNeeded(defaults: UserDefaults) {
+        guard !defaults.bool(forKey: DefaultsKey.promptOnlyMigrationCompleted) else {
+            return
+        }
+
+        for key in LegacyDefaultsKey.all {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.set(true, forKey: DefaultsKey.promptOnlyMigrationCompleted)
     }
 
     private func setFeedback(_ message: String) {

@@ -22,8 +22,39 @@ struct HeadGestureEvent: Equatable, Sendable {
     let confidence: Double
 }
 
+struct GestureDetectionResult: Equatable, Sendable {
+    let rawNodConfidence: Double
+    let rawShakeConfidence: Double
+    let nodConfidence: Double
+    let shakeConfidence: Double
+    let candidateGesture: HeadGesture?
+    let event: HeadGestureEvent?
+}
+
+struct GestureDiagnostics: Equatable, Sendable {
+    var rawNodConfidence: Double
+    var rawShakeConfidence: Double
+    var nodConfidence: Double
+    var shakeConfidence: Double
+    var triggerThreshold: Double
+    var sampleRateHertz: Double
+    var candidateGesture: HeadGesture?
+    var lastUpdatedTimestamp: TimeInterval?
+
+    static let empty = GestureDiagnostics(
+        rawNodConfidence: 0,
+        rawShakeConfidence: 0,
+        nodConfidence: 0,
+        shakeConfidence: 0,
+        triggerThreshold: 0,
+        sampleRateHertz: 0,
+        candidateGesture: nil,
+        lastUpdatedTimestamp: nil
+    )
+}
+
 struct GestureThresholdProfile: Codable, Equatable, Sendable {
-    static let currentVersion: Int = 1
+    static let currentVersion: Int = 2
 
     let version: Int
     let baselinePitch: Double
@@ -33,6 +64,11 @@ struct GestureThresholdProfile: Codable, Equatable, Sendable {
     let nodVelocityThreshold: Double
     let shakeAmplitudeThreshold: Double
     let shakeVelocityThreshold: Double
+    let nodCrossAxisLeakageMax: Double
+    let shakeCrossAxisLeakageMax: Double
+    let nodMinCrossings: Int
+    let shakeMinCrossings: Int
+    let diagnosticSmoothing: Double
     let minConfidence: Double
     let cooldownSeconds: Double
 
@@ -41,46 +77,22 @@ struct GestureThresholdProfile: Codable, Equatable, Sendable {
         baselinePitch: 0,
         baselineYaw: 0,
         neutralDeadzone: 0.035,
-        nodAmplitudeThreshold: 0.16,
-        nodVelocityThreshold: 0.65,
-        shakeAmplitudeThreshold: 0.2,
-        shakeVelocityThreshold: 0.85,
-        minConfidence: 0.55,
-        cooldownSeconds: 0.9
+        nodAmplitudeThreshold: 0.12,
+        nodVelocityThreshold: 0.50,
+        shakeAmplitudeThreshold: 0.16,
+        shakeVelocityThreshold: 0.68,
+        nodCrossAxisLeakageMax: 0.95,
+        shakeCrossAxisLeakageMax: 0.95,
+        nodMinCrossings: 1,
+        shakeMinCrossings: 2,
+        diagnosticSmoothing: 0.32,
+        minConfidence: 0.50,
+        cooldownSeconds: 0.80
     )
 }
 
-enum GestureMappedAction: String, Codable, CaseIterable, Identifiable {
-    case promptResponse
-    case runShortcut
-    case recenterMotion
-    case toggleControlMode
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .promptResponse:
-            return "Prompt Accept/Reject"
-        case .runShortcut:
-            return "Run Shortcut"
-        case .recenterMotion:
-            return "Set Zero"
-        case .toggleControlMode:
-            return "Toggle Control Mode"
-        }
-    }
-
-    var requiresShortcutName: Bool {
-        self == .runShortcut
-    }
-}
-
-struct GestureActionRouteConfig: Equatable, Sendable {
-    var nodAction: GestureMappedAction
-    var shakeAction: GestureMappedAction
-    var nodShortcutName: String
-    var shakeShortcutName: String
+enum GestureActionMode: String, Codable, Sendable {
+    case promptResponses
 }
 
 enum GestureCalibrationStage: String, Codable, CaseIterable, Sendable {

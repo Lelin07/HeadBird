@@ -1,10 +1,13 @@
 import AppKit
+import CoreMotion
 import SwiftUI
+import UserNotifications
 
 struct ContentView: View {
     @EnvironmentObject private var model: HeadBirdModel
     @State private var selectedTab: PopoverTab = .motion
     @State private var graphStyle: MotionHistoryGraph.GraphStyle = .lines
+    @State private var isPromptDebugSnapshotExpanded = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -43,7 +46,7 @@ struct ContentView: View {
         let pitchDegrees = degrees(displayPose.pitch)
         let rollDegrees = degrees(displayPose.roll)
         let yawDegrees = degrees(displayPose.yaw)
-        let isEnabled = model.connectedAirPods.isEmpty == false
+        let isEnabled = model.hasAnyAirPodsConnection
         let pitchColor = Color.blue
         let rollColor = Color.orange
         let yawColor = Color.green
@@ -130,7 +133,7 @@ struct ContentView: View {
 
     private var controlsTab: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Gesture Controls")
                         .font(.title3.weight(.semibold))
@@ -138,37 +141,70 @@ struct ContentView: View {
                     StatusPill(status: model.motionConnectionStatus)
                 }
 
+                readinessCard
                 calibrationCard
-                mappingCard(
-                    title: "Nod Mapping",
-                    action: $model.nodMappedAction,
-                    shortcutName: $model.nodShortcutName
-                )
-                mappingCard(
-                    title: "Shake Mapping",
-                    action: $model.shakeMappedAction,
-                    shortcutName: $model.shakeShortcutName
-                )
+                liveTesterCard
+                fixedMappingsCard
                 permissionsCard
-                safetyCard
-                lastGestureCard
+                promptDebugCard
             }
             .padding(.horizontal, 24)
             .padding(.top, 8)
         }
     }
 
-    private var calibrationCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Calibration")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(model.gestureCalibrationState.stage.rawValue.capitalized)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
+    private var readinessCard: some View {
+        guidedCard(step: "Step 1", title: "Readiness", subtitle: "Verify hardware, permissions, and profile state.") {
+            readinessRow(
+                title: "Connection",
+                detail: model.activeAirPodsName ?? "No AirPods connected",
+                isReady: model.activeAirPodsName != nil
+            )
+            readinessRow(
+                title: "Motion Permission",
+                detail: motionAuthorizationText,
+                isReady: model.motionAuthorization == .authorized
+            )
+            readinessRow(
+                title: "Calibration Profile",
+                detail: model.gestureCalibrationState.hasProfile
+                    ? (model.usesFallbackGestureProfile ? "Fallback profile active" : "Custom profile active")
+                    : "No profile configured",
+                isReady: model.gestureCalibrationState.hasProfile
+            )
+            readinessRow(
+                title: "Control Mode",
+                detail: model.gestureControlEnabled ? "Enabled" : "Disabled",
+                isReady: model.gestureControlEnabled
+            )
+            readinessRow(
+                title: "Prompt Target",
+                detail: promptTargetStatusText,
+                isReady: model.promptTargetCapabilities.hasAnyTarget
+            )
+            readinessRow(
+                title: "Prompt Target Name",
+                detail: promptTargetNameStatusText,
+                isReady: model.promptContextDetected && model.promptTargetName != nil
+            )
+        }
+    }
 
+    private var calibrationCard: some View {
+        guidedCard(
+            step: "Step 2",
+            title: "Calibration",
+            subtitle: "Capture neutral, nod, and shake to tune thresholds.",
+            headerTrailing: {
+                stateChip(
+                    title: model.usesFallbackGestureProfile ? "Fallback" : "Custom",
+                    tint: model.usesFallbackGestureProfile ? .orange : .green
+                )
+            }
+        ) {
+            Text(calibrationStageLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             Text(model.gestureCalibrationState.message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -178,97 +214,174 @@ struct ContentView: View {
             }
 
             HStack(spacing: 8) {
-                Button("Start") {
-                    model.startGestureCalibration()
-                }
-                .buttonStyle(.bordered)
-
-                Button(captureButtonTitle) {
-                    model.beginCalibrationCapture()
+                Button(calibrationPrimaryActionTitle) {
+                    runCalibrationPrimaryAction()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!canCaptureCalibrationStage)
+                .disabled(!canPerformCalibrationPrimaryAction)
 
                 Button("Use Fallback") {
                     model.skipCalibrationWithFallbackProfile()
                 }
                 .buttonStyle(.bordered)
-            }
-
-            HStack {
-                Toggle("Using fallback profile", isOn: .constant(model.usesFallbackGestureProfile))
-                    .disabled(true)
-                    .toggleStyle(.switch)
-                Spacer()
                 Button("Clear Profile") {
                     model.clearCalibrationProfile()
                 }
                 .buttonStyle(.bordered)
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.secondary.opacity(0.08))
-        )
     }
 
-    private func mappingCard(
-        title: String,
-        action: Binding<GestureMappedAction>,
-        shortcutName: Binding<String>
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
+    private var liveTesterCard: some View {
+        guidedCard(
+            step: "Step 3",
+            title: "Live Tester",
+            subtitle: "Visualizes nod/shake confidence while enabled. Actions still require a prompt target.",
+            headerTrailing: {
+                stateChip(
+                    title: testerStateTitle,
+                    tint: testerStateTint
+                )
+            }
+        ) {
+            HStack {
+                Text("Live tester enabled")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                if model.gestureTesterEnabled && model.gestureDiagnostics.sampleRateHertz > 0 {
+                    Text(String(format: "%.1f Hz", model.gestureDiagnostics.sampleRateHertz))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Toggle("", isOn: $model.gestureTesterEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!model.gestureControlEnabled)
+            }
 
-            Picker("Action", selection: action) {
-                ForEach(GestureMappedAction.allCases) { map in
-                    Text(map.title).tag(map)
+            if model.gestureTesterEnabled {
+                confidenceRow(
+                    label: "Nod",
+                    rawConfidence: model.gestureDiagnostics.rawNodConfidence,
+                    smoothedConfidence: model.gestureDiagnostics.nodConfidence,
+                    triggerThreshold: model.gestureDiagnostics.triggerThreshold,
+                    tint: .blue
+                )
+                confidenceRow(
+                    label: "Shake",
+                    rawConfidence: model.gestureDiagnostics.rawShakeConfidence,
+                    smoothedConfidence: model.gestureDiagnostics.shakeConfidence,
+                    triggerThreshold: model.gestureDiagnostics.triggerThreshold,
+                    tint: .green
+                )
+
+                HStack {
+                    Text("Candidate")
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text(model.gestureDiagnostics.candidateGesture?.title ?? "None")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Enable Live Tester to visualize nod/shake confidence.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Last Detected")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                if let event = model.lastGestureEvent {
+                    Text("\(event.gesture.title) \(Int(event.confidence * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .pickerStyle(.menu)
 
-            if action.wrappedValue.requiresShortcutName {
-                TextField("Shortcut Name", text: shortcutName)
-                    .textFieldStyle(.roundedBorder)
-                Text("Example: Dark Mode Toggle, Focus Work")
+            HStack {
+                Text("Last Action Result")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                if let result = model.lastGestureActionResult {
+                    let timestampText = model.lastGestureActionTimestamp?.formatted(date: .omitted, time: .standard) ?? ""
+                    let timestampSuffix = timestampText.isEmpty ? "" : " @ \(timestampText)"
+                    Text(result + timestampSuffix)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                } else {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(actionGateStatusText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(liveTesterStatusText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var fixedMappingsCard: some View {
+        guidedCard(step: "Step 4", title: "Gesture Mapping", subtitle: "Prompt control is fixed for now. More mappings can be added in a future update.") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Nod: Accept prompt")
+                    .font(.caption.weight(.medium))
+                Text("Shake: Reject prompt")
+                    .font(.caption.weight(.medium))
+            }
+
+            HStack {
+                Text("Control mode enabled")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Toggle("", isOn: $model.gestureControlEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!model.gestureCalibrationState.hasProfile)
+            }
+
+            Text(
+                model.gestureControlEnabled
+                    ? (model.promptTargetCapabilities.hasAnyTarget
+                        ? "Control mode is active. Detected nod/shake can accept or reject prompts."
+                        : "Control mode is active but waiting for a prompt target.")
+                    : (model.gestureCalibrationState.hasProfile
+                        ? "Control mode is off. Enable it to run gesture features."
+                        : "Control mode is unavailable until calibration or Use Fallback sets a profile.")
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            if let feedback = model.gestureFeedbackMessage {
+                Text(feedback)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.secondary.opacity(0.08))
-        )
     }
 
     private var permissionsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Permissions")
-                .font(.subheadline.weight(.semibold))
-
+        guidedCard(step: "Step 5", title: "Permissions", subtitle: "Required for prompt actions.") {
             permissionRow(
                 title: "Accessibility",
                 isGranted: model.accessibilityTrusted,
                 help: "Needed for AX default/cancel button actions."
             )
 
-            permissionRow(
-                title: "Event Posting",
-                isGranted: model.postEventAccessGranted,
-                help: "Needed for Return/Escape fallback events."
-            )
-
             HStack(spacing: 8) {
                 Button("Request Accessibility") {
                     model.requestAccessibilityPermissionPrompt()
-                }
-                .buttonStyle(.bordered)
-
-                Button("Request Event Access") {
-                    model.requestPostEventPermissionPrompt()
                 }
                 .buttonStyle(.bordered)
 
@@ -278,11 +391,97 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.secondary.opacity(0.08))
-        )
+    }
+
+    private var promptDebugCard: some View {
+        guidedCard(step: "Debug", title: "Prompt Debug", subtitle: "Capture a bounded Accessibility snapshot to diagnose prompt detection.") {
+            HStack {
+                Text("AX Debug Mode")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { model.promptDebugModeEnabled },
+                        set: { model.setPromptDebugModeEnabled($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+
+            HStack {
+                Text("Allow banners while popover open (debug)")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { model.promptDebugNotificationOverrideEnabled },
+                        set: { model.setPromptDebugBannerOverride($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!model.promptDebugModeEnabled)
+            }
+
+            HStack(spacing: 8) {
+                Button("Capture Prompt Snapshot") {
+                    model.capturePromptAXDebugSnapshot()
+                    isPromptDebugSnapshotExpanded = true
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Clear Snapshot") {
+                    model.clearPromptAXDebugSnapshot()
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.lastPromptAXDebugSnapshot == nil)
+
+                Button("Copy Snapshot") {
+                    copyPromptDebugSnapshotToPasteboard()
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.lastPromptAXDebugSnapshot == nil)
+            }
+
+            readinessRow(
+                title: "Prompt Signature",
+                detail: model.promptTargetSignature ?? "No prompt signature",
+                isReady: model.promptTargetSignature != nil
+            )
+
+            readinessRow(
+                title: "Notification Permission",
+                detail: notificationAuthorizationStatusText,
+                isReady: model.notificationAuthorizationStatus == .authorized || model.notificationAuthorizationStatus == .provisional
+            )
+
+            readinessRow(
+                title: "Last Snapshot Summary",
+                detail: promptDebugSnapshotSummaryText,
+                isReady: model.lastPromptAXDebugSnapshot != nil
+            )
+
+            DisclosureGroup(isExpanded: $isPromptDebugSnapshotExpanded) {
+                ScrollView {
+                    Text(promptDebugSnapshotBodyText)
+                        .font(.caption.monospaced())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(minHeight: 120, maxHeight: 220)
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.08))
+                )
+            } label: {
+                Text("Snapshot Details")
+                    .font(.caption.weight(.medium))
+            }
+        }
     }
 
     private func permissionRow(title: String, isGranted: Bool, help: String) -> some View {
@@ -302,60 +501,106 @@ struct ContentView: View {
         }
     }
 
-    private var safetyCard: some View {
+    private func readinessRow(title: String, detail: String, isReady: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Safety")
-                .font(.subheadline.weight(.semibold))
-
-            Toggle("Control mode enabled", isOn: $model.gestureControlEnabled)
-                .toggleStyle(.switch)
-
-            Toggle("Double-confirm gestures", isOn: $model.doubleConfirmEnabled)
-                .toggleStyle(.switch)
-
-            HStack(spacing: 10) {
-                Text("Extra Cooldown")
+            HStack(spacing: 8) {
+                Image(systemName: isReady ? "checkmark.circle.fill" : "exclamationmark.circle")
+                    .foregroundStyle(isReady ? Color.green : Color.orange)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 100, alignment: .leading)
-                Slider(value: $model.gestureCooldownSeconds, in: 0...1.6, step: 0.05)
-                Text(String(format: "%.2fs", model.gestureCooldownSeconds))
+                Text(title)
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Text(detail)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(width: 56, alignment: .trailing)
             }
-
-            Text(model.canUseGestureControls ? "Ready for nod/shake input." : "Connect AirPods and complete calibration to enable controls.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.secondary.opacity(0.08))
-        )
     }
 
-    private var lastGestureCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Last Gesture")
-                .font(.subheadline.weight(.semibold))
-
-            if let event = model.lastGestureEvent {
-                HStack {
-                    Text(event.gesture.title)
-                        .font(.caption.weight(.medium))
-                    Spacer()
-                    Text("\(Int(event.confidence * 100))%")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+    private func confidenceRow(
+        label: String,
+        rawConfidence: Double,
+        smoothedConfidence: Double,
+        triggerThreshold: Double,
+        tint: Color
+    ) -> some View {
+        let clampedRaw = max(0, min(1, rawConfidence))
+        let clampedSmoothed = max(0, min(1, smoothedConfidence))
+        let clampedThreshold = max(0, min(1, triggerThreshold))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(label)
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Text("Raw \(Int(clampedRaw * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                    Capsule()
+                        .fill(tint.opacity(0.9))
+                        .frame(width: proxy.size.width * clampedRaw)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.65))
+                        .frame(width: 1.5, height: 12)
+                        .offset(x: (proxy.size.width * clampedThreshold) - 0.75)
                 }
-            } else {
-                Text("No gesture detected yet.")
-                    .font(.caption)
+            }
+            .frame(height: 12)
+            HStack {
+                Text("Trigger >= \(Int(clampedThreshold * 100))%")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Smoothed \(Int(clampedSmoothed * 100))%")
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func guidedCard<Content: View>(
+        step: String,
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        guidedCard(step: step, title: title, subtitle: subtitle, headerTrailing: { EmptyView() }, content: content)
+    }
+
+    private func guidedCard<HeaderTrailing: View, Content: View>(
+        step: String,
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder headerTrailing: () -> HeaderTrailing,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(step)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.16))
+                    )
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                headerTrailing()
+            }
+            if let subtitle {
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            content()
+        }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -363,24 +608,188 @@ struct ContentView: View {
         )
     }
 
-    private var captureButtonTitle: String {
+    private func stateChip(title: String, tint: Color) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(tint.opacity(0.2))
+            )
+            .foregroundStyle(tint)
+    }
+
+    private var calibrationPrimaryActionTitle: String {
         switch model.gestureCalibrationState.stage {
+        case .notStarted, .completed:
+            return "Start Calibration"
         case .neutral:
             return "Capture Neutral"
         case .nod:
             return "Capture Nod"
         case .shake:
             return "Capture Shake"
-        case .notStarted:
-            return "Start First"
-        case .completed:
-            return "Done"
         }
     }
 
-    private var canCaptureCalibrationStage: Bool {
+    private var canPerformCalibrationPrimaryAction: Bool {
         let stage = model.gestureCalibrationState.stage
-        return !model.gestureCalibrationState.isCapturing && (stage == .neutral || stage == .nod || stage == .shake)
+        if model.gestureCalibrationState.isCapturing {
+            return false
+        }
+        return stage == .notStarted || stage == .completed || stage == .neutral || stage == .nod || stage == .shake
+    }
+
+    private var calibrationStageLabel: String {
+        switch model.gestureCalibrationState.stage {
+        case .notStarted:
+            return "Not Started"
+        case .neutral:
+            return "Neutral Stage"
+        case .nod:
+            return "Nod Stage"
+        case .shake:
+            return "Shake Stage"
+        case .completed:
+            return "Completed"
+        }
+    }
+
+    private var motionAuthorizationText: String {
+        switch model.motionAuthorization {
+        case .authorized:
+            return "Authorized"
+        case .notDetermined:
+            return "Not determined"
+        case .denied:
+            return "Denied"
+        case .restricted:
+            return "Restricted"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    private var liveTesterStatusText: String {
+        if !model.gestureCalibrationState.hasProfile {
+            return "Live tester is unavailable until calibration or Use Fallback provides a profile."
+        }
+        if !model.gestureControlEnabled {
+            return "Live tester is unavailable while Control Mode is off."
+        }
+        if !model.gestureTesterEnabled {
+            return "Live tester is off. Enable it to visualize nod/shake confidence, even without a prompt."
+        }
+        if !model.motionStreaming {
+            return "Waiting for motion stream. Connect AirPods and keep this tab open."
+        }
+        return "Live tester is active. Visualization works without a prompt; actions still wait for prompt targets."
+    }
+
+    private var actionGateStatusText: String {
+        if !model.gestureCalibrationState.hasProfile {
+            return "Actions disabled until calibration or Use Fallback."
+        }
+        if !model.gestureControlEnabled {
+            return "Actions disabled because Control Mode is off."
+        }
+        if !model.accessibilityTrusted {
+            return "Actions disabled until Accessibility permission is granted."
+        }
+        if !model.promptTargetCapabilities.hasAnyTarget {
+            return "Control mode enabled, waiting for frontmost prompt target."
+        }
+        return "Actions are enabled for the current prompt target."
+    }
+
+    private var promptTargetStatusText: String {
+        let capabilities = model.promptTargetCapabilities
+        if capabilities.canAccept && capabilities.canReject {
+            return "Accept and Reject available"
+        }
+        if capabilities.canAccept {
+            return "Accept only"
+        }
+        if capabilities.canReject {
+            return "Reject only"
+        }
+        let reason = model.promptTargetDebugMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reason.isEmpty {
+            return "No prompt target"
+        }
+        return "No prompt target (\(reason))"
+    }
+
+    private var promptTargetNameStatusText: String {
+        guard model.promptContextDetected else {
+            return "No prompt detected"
+        }
+        if let name = model.promptTargetName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty {
+            return name
+        }
+        return "Prompt detected (name unavailable)"
+    }
+
+    private var notificationAuthorizationStatusText: String {
+        switch model.notificationAuthorizationStatus {
+        case .authorized:
+            return "Allowed"
+        case .provisional:
+            return "Provisional"
+        case .denied:
+            return "Denied"
+        case .notDetermined:
+            return "Not Determined"
+        case .ephemeral:
+            return "Ephemeral"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    private var promptDebugSnapshotSummaryText: String {
+        guard let snapshot = model.lastPromptAXDebugSnapshot else {
+            return "No snapshot captured"
+        }
+        let pid = snapshot.appProcessIdentifier.map(String.init) ?? "nil"
+        let reason = snapshot.failureReason?.rawValue ?? "none"
+        return "pid=\(pid) roots=\(snapshot.rootsCount) promptLike=\(snapshot.promptLikeContainerCount) buttons=\(snapshot.buttonCandidateCount) failure=\(reason)"
+    }
+
+    private var promptDebugSnapshotBodyText: String {
+        model.lastPromptAXDebugSnapshot?.formattedText ?? "Capture a prompt snapshot to inspect the AX tree."
+    }
+
+    private func copyPromptDebugSnapshotToPasteboard() {
+        guard let text = model.lastPromptAXDebugSnapshot?.formattedText else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    private var testerStateTitle: String {
+        model.gestureTesterEnabled ? "Tester On" : "Tester Off"
+    }
+
+    private var testerStateTint: Color {
+        if !model.gestureControlEnabled || !model.gestureCalibrationState.hasProfile {
+            return .orange
+        }
+        if !model.gestureTesterEnabled {
+            return .orange
+        }
+        return .green
+    }
+
+    private func runCalibrationPrimaryAction() {
+        switch model.gestureCalibrationState.stage {
+        case .notStarted, .completed:
+            model.startGestureCalibration()
+        case .neutral, .nod, .shake:
+            model.beginCalibrationCapture()
+        }
     }
 
     private func degrees(_ radians: Double) -> Double {
