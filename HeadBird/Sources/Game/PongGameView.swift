@@ -153,6 +153,7 @@ struct PongGameView: View {
         }
 
         if state.isPaused {
+            scene.prepareForResume()
             state.resume()
             return
         }

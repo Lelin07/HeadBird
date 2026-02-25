@@ -5,6 +5,7 @@ final class FlappyGameScene: SKScene {
     private let bird = SKShapeNode(circleOfRadius: 10)
     private var lastUpdateTime: TimeInterval = 0
     private var lastSpawnTime: TimeInterval = 0
+    private var resetSpawnTimerOnNextFrame: Bool = false
     private var birdVelocity: CGFloat = 0
     private var obstacles: [ObstacleNode] = []
 
@@ -37,12 +38,24 @@ final class FlappyGameScene: SKScene {
         obstacles.removeAll()
         lastUpdateTime = 0
         lastSpawnTime = 0
+        resetSpawnTimerOnNextFrame = false
         birdVelocity = 0
         bird.position = CGPoint(x: size.width * 0.25, y: size.height * 0.5)
     }
 
+    func prepareForResume() {
+        lastUpdateTime = 0
+        resetSpawnTimerOnNextFrame = true
+    }
+
     override func update(_ currentTime: TimeInterval) {
         guard state.isPlaying else { return }
+
+        if resetSpawnTimerOnNextFrame {
+            lastSpawnTime = currentTime
+            resetSpawnTimerOnNextFrame = false
+        }
+
         let delta = lastUpdateTime > 0 ? currentTime - lastUpdateTime : 1.0 / 60.0
         lastUpdateTime = currentTime
 
